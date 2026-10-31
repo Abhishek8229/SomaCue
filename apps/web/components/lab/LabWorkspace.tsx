@@ -112,6 +112,9 @@ export function LabWorkspace() {
     setPose(mode);
     setPlaying(false);
     setTime(0);
+    // Stop the runtime before applying the pose, otherwise the clip can keep
+    // playing while the controls already show "Play".
+    lab?.setPlaying(false);
     lab?.setPose(mode);
   };
   const togglePlay = () => {

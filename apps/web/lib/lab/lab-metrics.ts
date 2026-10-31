@@ -199,6 +199,7 @@ export class PoseAnalyzer {
     };
 
     const pick = (system: AtlasSystemId, count: number, into: Sample[]) => {
+      if (count <= 0) return;
       const mesh = build.meshes.get(system);
       if (!mesh) return;
       const total = mesh.geometry.attributes.position.count;
@@ -214,20 +215,22 @@ export class PoseAnalyzer {
     for (const system of softSystems) pick(system, perSystem, this.soft);
 
     const perEdge = Math.ceil(edgeSamples / Math.max(1, softSystems.length));
-    for (const system of softSystems) {
-      const mesh = build.meshes.get(system) as SkinnedMesh;
-      const idx = mesh.geometry.index?.array as NumArray;
-      const pos = mesh.geometry.attributes.position.array;
-      const triCount = idx.length / 3;
-      const stride = Math.max(1, Math.floor(triCount / perEdge));
-      for (let t = 0; t < triCount; t += stride) {
-        const a = idx[t * 3];
-        const b = idx[t * 3 + 1];
-        const dx = pos[a * 3] - pos[b * 3];
-        const dy = pos[a * 3 + 1] - pos[b * 3 + 1];
-        const dz = pos[a * 3 + 2] - pos[b * 3 + 2];
-        const restLen = Math.hypot(dx, dy, dz);
-        if (restLen > 0.002) this.edges.push({ system, a, b, restLen });
+    if (perEdge > 0) {
+      for (const system of softSystems) {
+        const mesh = build.meshes.get(system) as SkinnedMesh;
+        const idx = mesh.geometry.index?.array as NumArray;
+        const pos = mesh.geometry.attributes.position.array;
+        const triCount = idx.length / 3;
+        const stride = Math.max(1, Math.floor(triCount / perEdge));
+        for (let t = 0; t < triCount; t += stride) {
+          const a = idx[t * 3];
+          const b = idx[t * 3 + 1];
+          const dx = pos[a * 3] - pos[b * 3];
+          const dy = pos[a * 3 + 1] - pos[b * 3 + 1];
+          const dz = pos[a * 3 + 2] - pos[b * 3 + 2];
+          const restLen = Math.hypot(dx, dy, dz);
+          if (restLen > 0.002) this.edges.push({ system, a, b, restLen });
+        }
       }
     }
   }
@@ -398,12 +401,14 @@ export class PoseAnalyzer {
       label,
       timeS,
       skeletalInsidePct: skeletal.pct,
-      softInsidePct: soft.pct,
+      ...(this.soft.length ? { softInsidePct: soft.pct } : {}),
       regions,
-      softEdgesOver25Pct: this.edges.length
-        ? (100 * stretched) / this.edges.length
-        : 0,
-      maxEdgeStretch: maxStretch,
+      ...(this.edges.length
+        ? {
+            softEdgesOver25Pct: (100 * stretched) / this.edges.length,
+            maxEdgeStretch: maxStretch,
+          }
+        : {}),
       lowestSkinYmm: lowest * 1000,
     };
   }

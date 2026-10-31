@@ -116,6 +116,30 @@ async function main() {
 
   const res = await page.evaluate(() => window.__somacueLab.results);
   fs.writeFileSync(path.join(ROOT, "docs", "3d-lab", "results.json"), JSON.stringify(res, null, 2));
+  const measuredSoftEdges = res.motion.samples
+    .filter((sample) => sample.label.startsWith("Clip "))
+    .map((sample) => sample.softEdgesOver25Pct)
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
+  const expectedWorstSoftEdges = measuredSoftEdges.length
+    ? Math.max(...measuredSoftEdges)
+    : undefined;
+  check(
+    "soft-edge aggregate uses only measured clip samples",
+    res.motion.worstSoftEdgesOver25Pct === expectedWorstSoftEdges,
+    `${res.motion.worstSoftEdgesOver25Pct ?? "not measured"} vs ${
+      expectedWorstSoftEdges ?? "not measured"
+    } (${measuredSoftEdges.length} measured)`,
+  );
+  const softTissueCheck = res.checks.find(
+    (candidate) => candidate.id === "movement.softTissue",
+  );
+  check(
+    "soft-tissue criterion cannot pass without a measurement",
+    Boolean(softTissueCheck) &&
+      (res.motion.worstSoftEdgesOver25Pct !== undefined ||
+        !softTissueCheck.pass),
+    softTissueCheck?.value ?? "criterion missing",
+  );
   check("page title marks the route experimental", (await page.title()).includes("experimental"));
   check("route is not indexable", await page.evaluate(() => document.querySelector('meta[name="robots"]')?.content.includes("noindex")));
   check("verdict panel is shown", await page.evaluate(() => Boolean(document.querySelector('[data-testid="lab-verdict"]'))));
@@ -191,10 +215,19 @@ async function main() {
   const t1 = await page.$eval('[data-testid="lab-time"]', (el) => parseFloat(el.textContent));
   check("play advances the clip", t1 > 0.1, `time=${t1}`);
   await clickButton(page, "Pause");
-  const paused = await page.$eval('[data-testid="lab-time"]', (el) => parseFloat(el.textContent));
+  await sleep(150);
+  const paused = await page.evaluate(() => window.__somacueLab?.lab.time() ?? null);
   await sleep(400);
-  const paused2 = await page.$eval('[data-testid="lab-time"]', (el) => parseFloat(el.textContent));
-  check("pause holds the pose", Math.abs(paused - paused2) < 0.02, `${paused} -> ${paused2}`);
+  const paused2 = await page.evaluate(() => window.__somacueLab?.lab.time() ?? null);
+  const pausedUi = await page.$eval('[data-testid="lab-time"]', (el) => parseFloat(el.textContent));
+  check(
+    "pause holds the pose",
+    typeof paused === "number" &&
+      typeof paused2 === "number" &&
+      Math.abs(paused - paused2) < 0.001 &&
+      Math.abs(pausedUi - paused2) < 0.02,
+    `${paused} -> ${paused2}; ui ${pausedUi}`,
+  );
 
   await setLayers(page, ["skeletal", "muscular"]);
   for (const [i, t] of [[11, 0.2], [12, 0.6], [13, 1.0]]) {
@@ -206,6 +239,22 @@ async function main() {
     }, t);
     await shot(page, `${i}-jumping-jacks-t${String(t).replace(".", "")}-muscles-and-skeleton`);
   }
+  const duration = await page.evaluate(() => window.__somacueLab.lab.duration);
+  await page.evaluate((seconds) => {
+    const input = document.querySelector('input[type="range"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, String(seconds));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, duration);
+  await sleep(250);
+  const endTime = await page.evaluate(() => window.__somacueLab.lab.time());
+  const endUi = await page.$eval('[data-testid="lab-time"]', (el) => parseFloat(el.textContent));
+  check(
+    "scrubbing to the end keeps the clip duration",
+    Math.abs(endTime - duration) < 0.001 && Math.abs(endUi - duration) < 0.02,
+    `${endUi} / ${duration}`,
+  );
+
   await setLayers(page, ["skeletal"]);
   await page.evaluate(() => {
     const input = document.querySelector('input[type="range"]');

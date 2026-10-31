@@ -4,6 +4,8 @@ import type { LabResults, PoseSample } from "@/lib/lab/lab-types";
 import styles from "./Lab.module.css";
 
 const fmt = (value: number, digits = 1) => value.toFixed(digits);
+const fmtMeasured = (value: number | undefined, digits = 1) =>
+  value === undefined ? "Not measured" : `${fmt(value, digits)}%`;
 
 function SampleTable({ samples }: { samples: PoseSample[] }) {
   return (
@@ -24,8 +26,8 @@ function SampleTable({ samples }: { samples: PoseSample[] }) {
             <tr key={s.label}>
               <th scope="row">{s.label}</th>
               <td className="num">{fmt(s.skeletalInsidePct)}%</td>
-              <td className="num">{fmt(s.softInsidePct)}%</td>
-              <td className="num">{fmt(s.softEdgesOver25Pct, 2)}%</td>
+              <td className="num">{fmtMeasured(s.softInsidePct)}</td>
+              <td className="num">{fmtMeasured(s.softEdgesOver25Pct, 2)}</td>
               <td className="num">{fmt(s.lowestSkinYmm, 0)} mm</td>
             </tr>
           ))}
@@ -81,7 +83,7 @@ export function LabResultsPanel({ results }: { results: LabResults }) {
           Bones inside skin: share of 3,000 sampled skeleton vertices that fall inside the Innerscene
           skin (ray parity). Edges over 25%: share of sampled soft-tissue triangle edges stretched or
           squashed by more than a quarter against the matched rest pose. The height-matched row repeats the rest
-          measurement with the atlas scaled to the rig's height instead of the joint fit; it is a sensitivity check
+          measurement with the atlas scaled to the rig height instead of the joint fit; it is a sensitivity check
           and has no soft-tissue measurement.
         </p>
       </details>

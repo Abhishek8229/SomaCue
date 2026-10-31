@@ -214,9 +214,14 @@ function evaluateChecks(r: Omit<LabResults, "checks" | "verdict">): CheckRow[] {
     basis: "method",
     group: "movement",
     label: "Soft structures deform without tearing",
-    criterion: `≤ ${c.clipSoftEdgesPct}% of sampled edges stretched or squashed by more than 25%. Depends on the lab's generated skin weights as much as on the assets`,
-    value: `worst ${pct(r.motion.worstSoftEdgesOver25Pct)}`,
-    pass: r.motion.worstSoftEdgesOver25Pct <= c.clipSoftEdgesPct,
+    criterion: `≤ ${c.clipSoftEdgesPct}% of sampled edges stretched or squashed by more than 25%. Depends on the lab's generated skin weights as much as on the assets. A missing measurement cannot pass.`,
+    value:
+      r.motion.worstSoftEdgesOver25Pct === undefined
+        ? "Not measured"
+        : `worst ${pct(r.motion.worstSoftEdgesOver25Pct)}`,
+    pass:
+      r.motion.worstSoftEdgesOver25Pct !== undefined &&
+      r.motion.worstSoftEdgesOver25Pct <= c.clipSoftEdgesPct,
   });
 
   add({
@@ -380,6 +385,12 @@ export async function createLabScene(
   );
 
   const allSamples = [...clipSamples];
+  const measuredSoftEdges = allSamples
+    .map((s) => s.softEdgesOver25Pct)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const worstSoftEdgesOver25Pct = measuredSoftEdges.length
+    ? Math.max(...measuredSoftEdges)
+    : undefined;
   const partial: Omit<LabResults, "checks" | "verdict"> = {
     generatedAt: new Date().toISOString(),
     durationMs: {
@@ -443,9 +454,9 @@ export async function createLabScene(
       worstSkeletalInsidePct: Math.min(
         ...allSamples.map((s) => s.skeletalInsidePct),
       ),
-      worstSoftEdgesOver25Pct: Math.max(
-        ...allSamples.map((s) => s.softEdgesOver25Pct),
-      ),
+      ...(worstSoftEdgesOver25Pct === undefined
+        ? {}
+        : { worstSoftEdgesOver25Pct }),
       finite: retarget.finite,
     },
   };
@@ -519,7 +530,9 @@ export async function createLabScene(
     setPose: applyPose,
     setPlaying: (value) => {
       playing = value;
-      if (pose !== "clip") applyPose("clip");
+      // Only entering playback should force the clip pose. Stopping must not
+      // switch the scene back to the clip after a different pose was chosen.
+      if (value && pose !== "clip") applyPose("clip");
       action.paused = !playing;
     },
     seek: (seconds) => {
@@ -532,7 +545,12 @@ export async function createLabScene(
     setSpeed: (value) => {
       action.setEffectiveTimeScale(value);
     },
-    time: () => (pose === "clip" ? action.time % (duration || 1) : 0),
+    time: () => {
+      if (pose !== "clip") return 0;
+      // Clamp at the endpoint: modulo would turn a scrub to the clip duration
+      // into 0.00, which looks like a reset.
+      return Math.min(Math.max(action.time, 0), duration);
+    },
     update: (delta) => {
       // The playback speed lives on the action's time scale.
       if (pose === "clip" && playing) mixer.update(Math.min(delta, 0.05));

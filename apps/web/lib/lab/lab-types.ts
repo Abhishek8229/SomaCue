@@ -37,11 +37,13 @@ export type PoseSample = {
   label: string;
   timeS: number;
   skeletalInsidePct: number;
-  softInsidePct: number;
+  /** omitted when no soft vertices were sampled */
+  softInsidePct?: number;
   regions: RegionContainment[];
-  /** share of sampled soft-tissue edges stretched or compressed by more than 25% against rest */
-  softEdgesOver25Pct: number;
-  maxEdgeStretch: number;
+  /** share of sampled soft-tissue edges stretched or compressed by more than 25% against rest; omitted when no edges were sampled */
+  softEdgesOver25Pct?: number;
+  /** omitted when no soft-tissue edges were sampled */
+  maxEdgeStretch?: number;
   /** lowest point of the rig skin; negative means below the floor */
   lowestSkinYmm: number;
 };
@@ -124,7 +126,8 @@ export type LabResults = {
     bakedFrames: number;
     samples: PoseSample[];
     worstSkeletalInsidePct: number;
-    worstSoftEdgesOver25Pct: number;
+    /** omitted when no clip sample measured soft-tissue edges */
+    worstSoftEdgesOver25Pct?: number;
     finite: boolean;
   };
   checks: CheckRow[];
