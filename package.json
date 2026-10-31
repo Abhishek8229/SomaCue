@@ -13,7 +13,8 @@
     "start": "pnpm --filter @somacue/web start",
     "lint": "pnpm --filter @somacue/web lint",
     "typecheck": "pnpm --filter @somacue/web typecheck",
-    "verify:interactions": "node scripts/verify-interactions.cjs"
+    "verify:interactions": "node scripts/verify-interactions.cjs",
+    "verify:3d-lab": "node scripts/verify-3d-lab.cjs"
   },
   "devDependencies": {
     "puppeteer-core": "^24.38.0"

@@ -48,6 +48,8 @@ export type PoseSample = {
 
 export type CheckRow = {
   id: string;
+  /** assets: a property of the files. method: depends on how this lab processed them. */
+  basis: "assets" | "method";
   group: "scale" | "orientation" | "alignment" | "movement" | "licence";
   label: string;
   criterion: string;
@@ -103,6 +105,15 @@ export type LabResults = {
     unmappedBones: string[];
   };
   rest: PoseSample;
+  /** the same rest measurement with the atlas scaled to match skin height instead of the joint fit */
+  heightMatchedFit: PoseSample & { scale: number };
+  /** the inside/outside test checked against the rig's own surface */
+  validation: {
+    offsetMm: number;
+    samples: number;
+    inwardInsidePct: number;
+    outwardInsidePct: number;
+  };
   motion: {
     clip: string;
     durationS: number;
@@ -120,6 +131,8 @@ export type LabResults = {
   verdict: {
     usableTogether: boolean;
     summary: string;
+    assetFailures: number;
+    methodFailures: number;
     passed: number;
     failed: number;
   };
