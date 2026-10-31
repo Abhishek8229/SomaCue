@@ -1,49 +1,70 @@
-# SomaCue Stage 4 — 3D feasibility prototype
+# SomaCue — Stage 4.1 3D workspace
 
-A bounded technical spike, not a product build. It tests whether one interactive
-lumbar anatomy model and one rigged exercise clip can share a single
-3D-dominant workspace without inventing clinical content.
+The Stage 4 feasibility prototype, promoted into the official pnpm monorepo
+architecture without changing the interaction design or clinical copy.
 
-**Status:** prototype complete and verified. Stop point for Stage 4.
+**Status:** Stage 4.1 complete. The Next.js app lives in `apps/web`; the existing
+routes, React Three Fiber stage, hooks, CSS, theme persistence and both GLB
+assets are preserved.
 
-## What it proves
+## Workspace structure
 
-- A 35% guidance rail and a 65% dark stage hold both demonstrations in one
-  screen. On mobile the stage comes first and the guidance sits beneath it.
-- One real L4 vertebra can be orbited, zoomed and reset, with front, side and
-  back presets that follow the exported file axes.
-- One real standing cat-cow clip can be played, paused, replayed, scrubbed and
-  slowed without autoplay. Speed changes the visual rate only.
-- Every required non-happy path is visible and usable: loading, model failure,
-  WebGL unavailable, and a static/text fallback.
-- Light and dark themes work, with the system preference used on first visit
-  and a manual choice persisted locally. The stage stays dark in both themes.
-- Completion is a local-only mark, with no account or server call.
+```text
+.
+├─ apps/
+│  └─ web/                 Next.js application
+│     ├─ app/              routes, fonts, global tokens and theme script
+│     ├─ components/       workspace UI and the R3F stage
+│     ├─ lib/              asset metadata, model loading, hooks
+│     └─ public/assets/    both GLBs, licence notice, fallback stills
+├─ docs/
+│  ├─ 3d-feasibility/      asset register, promotion/implementation notes
+│  └─ screenshots/         verification captures
+├─ scripts/
+│  └─ verify-interactions.cjs
+├─ package.json            root scripts and verification tooling
+├─ pnpm-workspace.yaml
+└─ pnpm-lock.yaml
+```
+
+Only one application exists today, so shared packages were not invented. The
+workspace is ready for `packages/*` when a second consumer appears.
 
 ## Run it
 
-Requires Node.js 20+ and npm. This prototype uses npm because pnpm was not
-available in the working environment; the promotion note covers the move to the
-approved pnpm monorepo.
+Requires Node.js 20.9+ and pnpm 12.16.1. The root `packageManager` field pins the
+pnpm version; Corepack is the simplest way to provide it.
 
 ```bash
-npm install
-npm run dev        # http://localhost:3100
+corepack enable
+pnpm install
+pnpm dev          # http://localhost:3100
 ```
 
 Production check:
 
 ```bash
-npm run build
-npm start          # http://localhost:3100
+pnpm build
+pnpm start        # http://localhost:3100
 ```
 
 Quality gates:
 
 ```bash
-npm run lint
-npm run typecheck
+pnpm lint
+pnpm typecheck
 ```
+
+Browser interaction checks require the production server to be running:
+
+```bash
+pnpm start                         # terminal 1
+pnpm verify:interactions           # terminal 2
+```
+
+The verification script finds Chrome in its standard Windows, macOS and Linux
+locations. Override with `CHROME_PATH` if needed, or point at another server with
+`SOMACUE_BASE_URL`.
 
 ## Routes and interactions
 
@@ -65,37 +86,43 @@ npm run typecheck
 The movement demo starts paused. There is no autoplay. The anatomy stage starts
 interactive and has no animation.
 
-## Structure
+## Application structure
 
+```text
+apps/web/
+  app/
+    layout.tsx           fonts, metadata, prepaint theme script
+    page.tsx             server-side ?view=anatomy initial state
+    globals.css          Hallmark stamp, imports, global shell
+    tokens.css           light/dark palette and static stage tokens
+    base.css             resets, focus, active press, utility classes
+
+  components/workspace/
+    Workspace.tsx        shell, URL state, notes dialog wiring
+    TopBar.tsx           wordmark, asset notes, theme toggle
+    StagePanel.tsx       tabs, transport, camera controls, all stage states
+    StageCanvas.tsx      React Three Fiber scene, loading, camera rig
+    GuidancePanel.tsx    demonstration copy, provenance, local completion
+    AssetNotes.tsx       licence and inspection dialog
+
+  lib/
+    assets.ts            exact asset metadata and supplied copy
+    load-model.ts        GLTFLoader wrapper
+    stage-palette.ts     resolves CSS tokens into Three.js colour values
+    use-environment.ts   WebGL support and reduced-motion hooks
+    use-demo-completion.ts
+    theme.ts
+
+  public/assets/
+    anatomy/             selected NIH 3D GLB
+    movement/            trimmed Desk Break GLB and MIT notice
+    fallback/            1200 × 900 stills captured from this build
 ```
-app/
-  layout.tsx           fonts, metadata, prepaint theme script
-  page.tsx             server-side ?view=anatomy initial state
-  globals.css          Hallmark stamp, imports, global shell
-  tokens.css           light/dark palette and static stage tokens
-  base.css             resets, focus, active press, utility classes
 
-components/workspace/
-  Workspace.tsx        shell, URL state, notes dialog wiring
-  TopBar.tsx           wordmark, asset notes, theme toggle
-  StagePanel.tsx       tabs, transport, camera controls, all stage states
-  StageCanvas.tsx      React Three Fiber scene, model loading, camera rig
-  GuidancePanel.tsx    demonstration copy, provenance, local completion
-  AssetNotes.tsx       licence and inspection dialog
-
-lib/
-  assets.ts            exact asset metadata and supplied copy
-  load-model.ts        GLTFLoader wrapper
-  stage-palette.ts     resolves CSS tokens into Three.js colour values
-  use-environment.ts   WebGL support and reduced-motion hooks
-  use-demo-completion.ts
-  theme.ts
-
-public/assets/
-  anatomy/             selected NIH 3D GLB
-  movement/            trimmed Desk Break GLB and MIT notice
-  fallback/            1200 × 900 stills captured from this build
-```
+`TopBar` is retained because this repository still has no separate host shell.
+Replacing it now would change the approved UI. See
+[`docs/3d-feasibility/monorepo-implementation.md`](docs/3d-feasibility/monorepo-implementation.md)
+for that and the other promotion decisions.
 
 ## Assets and licences
 
@@ -106,7 +133,7 @@ Full details, hashes, rights and rejected candidates:
   Domain. One L4 vertebra, not the full lumbar series.
 - **Movement:** Desk Break `standing-cat-cow` by Shlomy Reshef, MIT. Trimmed
   from 435 clips to one with glTF Transform 4.5.1; clip unchanged. Full notice
-  at `public/assets/movement/desk-break-LICENSE.txt`.
+  at `apps/web/public/assets/movement/desk-break-LICENSE.txt`.
 - **Fallback stills:** captures of those two approved models from this build.
 
 No model with an unknown licence is shipped. No clinical claim, rep count or
@@ -118,16 +145,17 @@ Run against the production build on 31 October 2026:
 
 | Command | Result |
 | --- | --- |
-| `npm run typecheck` | Pass |
-| `npm run lint` | Pass |
-| `npm run build` | Pass (Next.js 16.4.3, Turbopack) |
-| Browser script, 32 checks | 32/32 pass, 0 console errors |
-| Hallmark `sloplint.mjs app --scope app --render` | Clean: 0 FAIL, 0 REFLEX, 0 WARN |
+| `pnpm typecheck` | Pass |
+| `pnpm lint` | Pass |
+| `pnpm build` | Pass (Next.js 16.4.3, Turbopack) |
+| `pnpm verify:interactions` | **32/32 pass**, 0 console errors |
 
 The browser script covers theme persistence, dialog Escape, play/pause, scrub,
 speed, replay, text view, anatomy URL restore, camera presets, zoom, keyboard
 tabs, completion persistence and clearing, mobile stacking, 320 px overflow,
-reduced motion, GLB failure, and WebGL unavailable.
+reduced motion, GLB failure, and WebGL unavailable. The same 32 assertions from
+Stage 4 were moved into `scripts/verify-interactions.cjs`; none were removed or
+relaxed during the promotion.
 
 Screenshots in [`docs/screenshots/`](docs/screenshots/):
 
@@ -150,17 +178,24 @@ Screenshots in [`docs/screenshots/`](docs/screenshots/):
 - The movement clip is a demonstration of rigging and transport, not a
   prescription. The interface does not show reps or dosage.
 - Still fallbacks are 2D captures, not a second interactive renderer.
-- This is a standalone npm app. No auth, database, AI, upload, worker, payment
-  or deployment configuration is included.
+- The workspace has no host application shell yet, so the local `TopBar` is
+  still the header.
+- No auth, database, AI, upload, worker, payment or deployment configuration is
+  included.
 
-## Promotion
+## Git and further work
 
-The proposed move into the pnpm `apps/web` workspace, including file mapping,
-dependency merging, token collisions and a checklist, is in
-[`docs/3d-feasibility/monorepo-promotion.md`](docs/3d-feasibility/monorepo-promotion.md).
-No monorepo was created or modified for this spike.
+Git was initialized for Stage 4.1 and a checkpoint commit was created before
+the refactor:
 
-The next smallest task after sign-off is to place `components/workspace` and
-`lib/assets.ts` into `apps/web`, keep the host shell, and verify the same seven
-states there. Do that before expanding the anatomy scope or adding a second
-exercise.
+```text
+56067af chore: checkpoint stage 4 standalone 3D prototype
+```
+
+The applied promotion record, dependency change and remaining integration
+questions are in
+[`docs/3d-feasibility/monorepo-implementation.md`](docs/3d-feasibility/monorepo-implementation.md).
+
+The next smallest task is to connect `apps/web` to the host application shell
+when that shell exists, keeping the current stage and guidance components. Do
+not expand the anatomy catalogue or add another exercise yet.

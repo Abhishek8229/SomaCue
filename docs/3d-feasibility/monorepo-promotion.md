@@ -1,9 +1,14 @@
 # Promotion note: standalone spike → `apps/web`
 
-This note records how the Stage 4 prototype should move into the approved pnpm
-monorepo. **Nothing in this note has been applied.** The current working
-directory has no monorepo, no workspace file and no pnpm installation; a
-standalone npm app was the smallest way to run the spike.
+> **Status:** applied in Stage 4.1 on 31 October 2026. The authoritative
+> structure, actual file mapping, dependency notes and deviations are recorded
+> in [`monorepo-implementation.md`](monorepo-implementation.md). This note is
+> retained as the original promotion plan.
+
+This note records how the Stage 4 prototype would move into the approved pnpm
+monorepo. At the time of writing, the working directory had no monorepo, no
+workspace file and no pnpm installation; a standalone npm app was the smallest
+way to run the spike.
 
 ## Target shape
 

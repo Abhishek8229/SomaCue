@@ -2,7 +2,8 @@
 
 Register for the SomaCue 3D feasibility spike. Scope: two locally served GLB
 files behind one demonstration workspace, plus the still frames derived from
-them for fallback states. Reviewed 31 October 2026.
+them for fallback states. Reviewed 31 October 2026 and moved unchanged into
+`apps/web` during the Stage 4.1 monorepo promotion.
 
 No asset is shipped with an unknown or inferred licence. If a licence cannot be
 established from the source record, the asset is not approved.
@@ -17,8 +18,8 @@ established from the source record, the asset is not approved.
 | Z-Anatomy | Repository models | Lluís Vinent Juanico / Z-Anatomy project | `PC-Version` branch, reviewed 31 Oct 2026 | Blend / FBX | CC BY-SA 4.0 at repository level, with mixed asset-level terms | Conditional | Yes, share-alike | Yes, share-alike | Rejected for this spike |
 | OpenGym3D | Exercise library and motion sources | AssiamahS / OpenGym3D | `main`, reviewed 31 Oct 2026 | GLB / source | Repository MIT; bundled motion sources carry separate terms | Bundle: no | Bundle: no | Bundle: no | Bundle rejected; CC0 Mesh2Motion subset noted |
 
-All shipped files are served from `public/assets/`. No remote model request is
-made at runtime.
+All shipped files are served from `apps/web/public/assets/`. No remote model
+request is made at runtime.
 
 ## Selected anatomy asset
 
@@ -33,7 +34,7 @@ made at runtime.
 - **Created:** 28 June 2014
 - **Published:** 5 October 2026
 - **Category:** Anatomy
-- **Local file:** `public/assets/anatomy/nih-3dpx-000379-l4.glb`
+- **Local file:** `apps/web/public/assets/anatomy/nih-3dpx-000379-l4.glb`
 - **Format:** binary glTF 2.0 (`.glb`)
 - **Size:** 1,311,912 bytes (1.25 MiB)
 - **SHA-256:** `A8D05DE6C80901749F7704B07ECCB4E7B1B5339263A09CECE820D0CAE48D4D24`
@@ -60,7 +61,7 @@ badge links to the Creative Commons CC0 1.0 Universal deed:
 The interface says so in the summary and in Asset notes. It must not be
 presented as a full spine, a diagnostic model, or clinical evidence.
 
-**Derived files.** `public/assets/fallback/l4-vertebra.png` is a 1200 × 900
+**Derived files.** `apps/web/public/assets/fallback/l4-vertebra.png` is a 1200 × 900
 capture of this model rendered by this prototype. It inherits the source
 licence. It is a presentation fallback, not a new anatomical dataset.
 
@@ -74,7 +75,7 @@ licence. It is a presentation fallback, not a new anatomical dataset.
 - **Revision inspected:** GitHub tree `8d475aa476b2c0e9ec6d09d8558faf17161e19ef`
 - **Creator:** Shlomy Reshef (parametric.co.il)
 - **Clip:** `standing-cat-cow`, category "back and spine"
-- **Local file:** `public/assets/movement/desk-break-standing-cat-cow.glb`
+- **Local file:** `apps/web/public/assets/movement/desk-break-standing-cat-cow.glb`
 - **Format:** binary glTF 2.0 (`.glb`)
 - **Size:** 903,288 bytes (881.6 KiB)
 - **SHA-256:** `9AC83F2CC5F736BCFB4726583B13B9E7AD19973192EAB99BDCD34A2E8231752E`
@@ -85,7 +86,7 @@ licence. It is a presentation fallback, not a new anatomical dataset.
 **Licence.** MIT. Full notice:
 <https://github.com/shlomorsh/desk-break/blob/main/LICENSE>. The complete text
 travels with the asset at
-`public/assets/movement/desk-break-LICENSE.txt`.
+`apps/web/public/assets/movement/desk-break-LICENSE.txt`.
 
 Copyright (c) 2026 Shlomy Reshef (parametric.co.il).
 
@@ -111,7 +112,7 @@ source's rep count is deliberately not shown and the prototype makes no dosage
 or clinical claim. Playback speed changes the visual rate only; it is not a
 prescription.
 
-**Derived files.** `public/assets/fallback/standing-cat-cow.png` is a
+**Derived files.** `apps/web/public/assets/fallback/standing-cat-cow.png` is a
 1200 × 900 capture of the first frame rendered by this prototype. It inherits
 the source licence.
 

@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+
+minimumReleaseAgeExclude:
+  - "@types/three@0.187.0"
+
+allowBuilds:
+  unrs-resolver: true
