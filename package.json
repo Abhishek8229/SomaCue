@@ -1,0 +1,31 @@
+{
+  "name": "somacue-3d-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SomaCue stage 4 feasibility prototype: anatomy and movement in one 3D workspace.",
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "start": "next start --port 3100",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "@types/three": "0.187.0",
+    "eslint": "9.39.1",
+    "eslint-config-next": "16.4.3",
+    "puppeteer-core": "^24.38.0",
+    "typescript": "5.9.3"
+  }
+}

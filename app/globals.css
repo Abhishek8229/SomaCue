@@ -1,0 +1,21 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: custom · job: try · idea: "A physiotherapy demonstration inspected like a specimen on a lit bench." · vibe: "clinical 3D vitrine, quiet instrument"
+ * paper: oklch(96.6% 0.006 185) · accent: oklch(49% 0.115 189) · display: Rethink Sans · body: Hanken Grotesk · hero: none; the lit stage is the first view · nav: wordmark and two utilities, no links · footer: none; the guidance foot holds the only completion action · imagery: live GLB models and their captured stills, no stock · signature: one vertebra and one paused wooden figure under a single bench light · screen: 35% guidance rail, 65% dark stage · states: loading, error, WebGL unavailable, static · axes: light/grotesk-sans/cool · posture: restrained · contrast: pass · fold: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P5 H4 E5 S4 R5 V4 · weakest: V, the bounded single-screen brief fixes the shape; variety sits in the 35/65 vitrine and the stage-first mobile order */
+@import "./tokens.css";
+@import "./base.css";
+
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  height: 100%;
+  background: var(--color-paper);
+}
+
+button,
+select,
+input {
+  -webkit-tap-highlight-color: transparent;
+}

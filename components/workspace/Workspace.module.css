@@ -1,0 +1,57 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  background: var(--color-paper);
+  overflow: clip;
+}
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 35fr) minmax(0, 65fr);
+  grid-template-areas: "guidance stage";
+}
+
+.guidancePane {
+  grid-area: guidance;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+
+.stagePane {
+  grid-area: stage;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-sm);
+  background: var(--color-paper-2);
+}
+
+@media (max-width: 60rem) {
+  .shell {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .workspace {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "stage"
+      "guidance";
+  }
+
+  .guidancePane {
+    border-right: 0;
+    border-top: 1px solid var(--color-rule);
+  }
+
+  .stagePane {
+    padding: var(--space-xs);
+  }
+}
