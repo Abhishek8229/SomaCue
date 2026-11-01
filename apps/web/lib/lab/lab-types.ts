@@ -37,17 +37,21 @@ export type PoseSample = {
   label: string;
   timeS: number;
   skeletalInsidePct: number;
-  softInsidePct: number;
+  /** omitted when no soft vertices were sampled */
+  softInsidePct?: number;
   regions: RegionContainment[];
-  /** share of sampled soft-tissue edges stretched or compressed by more than 25% against rest */
-  softEdgesOver25Pct: number;
-  maxEdgeStretch: number;
+  /** share of sampled soft-tissue edges stretched or compressed by more than 25% against rest; omitted when no edges were sampled */
+  softEdgesOver25Pct?: number;
+  /** omitted when no soft-tissue edges were sampled */
+  maxEdgeStretch?: number;
   /** lowest point of the rig skin; negative means below the floor */
   lowestSkinYmm: number;
 };
 
 export type CheckRow = {
   id: string;
+  /** assets: a property of the files. method: depends on how this lab processed them. */
+  basis: "assets" | "method";
   group: "scale" | "orientation" | "alignment" | "movement" | "licence";
   label: string;
   criterion: string;
@@ -103,6 +107,15 @@ export type LabResults = {
     unmappedBones: string[];
   };
   rest: PoseSample;
+  /** the same rest measurement with the atlas scaled to match skin height instead of the joint fit */
+  heightMatchedFit: PoseSample & { scale: number };
+  /** the inside/outside test checked against the rig's own surface */
+  validation: {
+    offsetMm: number;
+    samples: number;
+    inwardInsidePct: number;
+    outwardInsidePct: number;
+  };
   motion: {
     clip: string;
     durationS: number;
@@ -113,13 +126,16 @@ export type LabResults = {
     bakedFrames: number;
     samples: PoseSample[];
     worstSkeletalInsidePct: number;
-    worstSoftEdgesOver25Pct: number;
+    /** omitted when no clip sample measured soft-tissue edges */
+    worstSoftEdgesOver25Pct?: number;
     finite: boolean;
   };
   checks: CheckRow[];
   verdict: {
     usableTogether: boolean;
     summary: string;
+    assetFailures: number;
+    methodFailures: number;
     passed: number;
     failed: number;
   };
