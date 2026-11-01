@@ -500,6 +500,9 @@ export async function createLabScene(
     if (mode === "clip") {
       startClip();
       action.paused = !playing;
+      // A paused action is not evaluated by the mixer until it updates. Apply
+      // the reset frame now so the first pose is visible without pressing Play.
+      mixer.update(0);
       return;
     }
     action.stop();
