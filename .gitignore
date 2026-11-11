@@ -4,9 +4,5 @@ out
 dist
 .env*
 !.env.example
+apps/web/generated/
 *.tsbuildinfo
-next-env.d.ts
-.DS_Store
-.hallmark
-.pnpm-store
-pnpm-debug.log*

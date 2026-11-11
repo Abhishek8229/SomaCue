@@ -5,4 +5,11 @@ minimumReleaseAgeExclude:
   - "@types/three@0.187.0"
 
 allowBuilds:
+  "@prisma/engines": true
+  esbuild: false
+  prisma: true
   unrs-resolver: true
+
+permissions:
+  prisma:
+    skills: false

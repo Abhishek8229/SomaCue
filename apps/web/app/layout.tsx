@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Azeret_Mono, Hanken_Grotesk, Rethink_Sans } from "next/font/google";
+import { Navbar } from "@/components/nav/Navbar";
+import { getCurrentUser } from "@/lib/auth/session";
 import "./globals.css";
 
 const rethink = Rethink_Sans({
@@ -29,7 +31,8 @@ export const metadata: Metadata = {
 
 const themeScript = `(function(){try{var stored=localStorage.getItem("somacue.theme");var dark=window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=stored==="light"||stored==="dark"?stored:dark?"dark":"light";}catch(e){document.documentElement.dataset.theme="light";}})();`;
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const user = await getCurrentUser();
   return (
     <html
       lang="en"
@@ -40,7 +43,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <Navbar user={user} />
+        {children}
+      </body>
     </html>
   );
 }

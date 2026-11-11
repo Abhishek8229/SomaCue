@@ -1,0 +1,296 @@
+.page {
+  min-height: calc(100dvh - var(--nav-h));
+  padding: clamp(32px, 5vw, 72px) var(--gutter) var(--space-3xl);
+  background:
+    radial-gradient(circle at 90% 0%, color-mix(in oklab, var(--color-accent) 8%, transparent), transparent 28rem),
+    var(--color-paper);
+}
+
+.header,
+.grid {
+  width: min(100%, 1180px);
+  margin-inline: auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding-bottom: var(--space-xl);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.greeting,
+.cardLabel {
+  margin-bottom: var(--space-sm);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.greeting::before,
+.cardLabel::before {
+  content: "";
+  display: inline-block;
+  width: 24px;
+  height: 1px;
+  margin: 0 var(--space-xs) var(--space-3xs) 0;
+  background: currentColor;
+}
+
+.title {
+  max-width: 13ch;
+  font-size: clamp(2.2rem, 5vw, 4.4rem);
+  font-weight: 500;
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+}
+
+.email {
+  margin-top: var(--space-md);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding-inline: var(--space-sm);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 28%, var(--color-rule));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-paper));
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2xl);
+  padding-top: var(--space-2xl);
+}
+
+.heroCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
+  gap: var(--space-xl);
+  min-height: 360px;
+  overflow: hidden;
+  border-radius: var(--radius-shell);
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+.heroCardCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: clamp(28px, 5vw, 64px);
+}
+
+.heroCard .cardLabel {
+  color: var(--stage-accent);
+}
+
+.cardTitle {
+  max-width: 13ch;
+  font-size: clamp(2rem, 4vw, 3.8rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+
+.cardBody {
+  max-width: 47ch;
+  margin-top: var(--space-lg);
+  color: var(--color-muted);
+  font-size: var(--text-ui);
+  line-height: 1.65;
+}
+
+.heroCard .cardBody {
+  color: color-mix(in oklab, var(--color-paper) 68%, transparent);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  margin-top: auto;
+  padding-inline: var(--space-lg);
+  border: 1px solid var(--stage-accent);
+  border-radius: var(--radius-input);
+  background: var(--stage-accent);
+  color: var(--stage-accent-ink);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background-color var(--dur-short) var(--ease-out),
+    color var(--dur-short) var(--ease-out),
+    transform var(--dur-short) var(--ease-out);
+}
+
+.action:hover {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  transform: translateY(-2px);
+}
+
+.heroCardVisual {
+  position: relative;
+  min-height: 360px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, color-mix(in oklab, var(--stage-accent) 18%, transparent), transparent 48%),
+    var(--stage-bg);
+}
+
+.visualRing,
+.visualBody,
+.visualDot {
+  position: absolute;
+  display: block;
+}
+
+.visualRing {
+  inset: 18% 20%;
+  border: 1px solid color-mix(in oklab, var(--stage-accent) 55%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 34px color-mix(in oklab, var(--stage-accent) 8%, transparent),
+    0 0 0 72px color-mix(in oklab, var(--stage-accent) 5%, transparent);
+}
+
+.visualBody {
+  top: 16%;
+  left: 50%;
+  width: 28%;
+  height: 68%;
+  border-radius: 46% 46% 18% 18%;
+  background: linear-gradient(160deg, var(--stage-ink), var(--stage-bone));
+  opacity: 0.8;
+  transform: translateX(-50%);
+}
+
+.visualDot {
+  top: 44%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--stage-accent);
+  border-radius: 50%;
+  background: var(--stage-accent);
+  box-shadow: 0 0 0 12px color-mix(in oklab, var(--stage-accent) 12%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.visualLabel {
+  position: absolute;
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+  color: var(--stage-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-xs);
+}
+
+.snapshotSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.sectionHeading h2,
+.nextTitle {
+  max-width: 18ch;
+  font-size: clamp(1.7rem, 3vw, 2.8rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.snapshots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--color-rule);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-height: 150px;
+  padding: var(--space-lg) var(--space-lg) var(--space-lg) 0;
+}
+
+.snapshot + .snapshot {
+  padding-left: var(--space-lg);
+  border-left: 1px solid var(--color-rule);
+}
+
+.statLabel,
+.statDetail {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.statValue {
+  font-size: var(--text-lg);
+  font-weight: 500;
+}
+
+.statDetail {
+  margin-top: auto;
+  font-size: var(--text-xs);
+}
+
+.nextSection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: var(--gap-columns);
+  align-items: end;
+  padding-top: var(--space-xl);
+  border-top: 1px solid var(--color-rule);
+}
+
+.nextSection .cardBody {
+  margin-top: 0;
+}
+
+@media (max-width: 54rem) {
+  .heroCard,
+  .nextSection {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heroCardVisual {
+    min-height: 280px;
+  }
+}
+
+@media (max-width: 40rem) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .snapshots {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .snapshot,
+  .snapshot + .snapshot {
+    min-height: 120px;
+    padding: var(--space-md) 0;
+    border-left: 0;
+    border-bottom: 1px solid var(--color-rule);
+  }
+
+  .snapshot:last-child {
+    border-bottom: 0;
+  }
+}

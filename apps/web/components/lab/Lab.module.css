@@ -1,7 +1,7 @@
 .shell {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: calc(100dvh - var(--nav-h));
   min-height: 0;
   background: var(--color-paper);
   overflow: clip;
@@ -371,7 +371,7 @@
 @media (max-width: 60rem) {
   .shell {
     height: auto;
-    min-height: 100dvh;
+    min-height: calc(100dvh - var(--nav-h));
     overflow: visible;
   }
 

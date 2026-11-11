@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../apps/web/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  patientAssessments   ClinicalAssessment[] @relation("PatientAssessments")
+  clinicianAssessments ClinicalAssessment[] @relation("ClinicianAssessments")
+}
+
+model ClinicalAssessment {
+  id                 String   @id @default(cuid())
+  patientId          String
+  clinicianId        String?
+  rawReportText      String
+  extractedDiagnosis Json     @db.JsonB
+  safetyStatus       String   @default("PENDING")
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+
+  patient             User                 @relation("PatientAssessments", fields: [patientId], references: [id], onDelete: Cascade)
+  clinician           User?                @relation("ClinicianAssessments", fields: [clinicianId], references: [id], onDelete: SetNull)
+  prescribedMovements PrescribedMovement[]
+
+  @@index([patientId])
+  @@index([clinicianId])
+  @@index([safetyStatus])
+}
+
+model Exercise {
+  id             String   @id @default(cuid())
+  name           String
+  movementPlanes String[]
+
+  prescribedMovements PrescribedMovement[]
+
+  @@index([name])
+}
+
+model PrescribedMovement {
+  id           String @id @default(cuid())
+  assessmentId String
+  exerciseId   String
+
+  assessment ClinicalAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  exercise   Exercise           @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+
+  @@index([assessmentId])
+  @@index([exerciseId])
+}

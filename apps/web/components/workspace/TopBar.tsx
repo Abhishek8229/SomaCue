@@ -16,13 +16,13 @@ export function TopBar({ onOpenAssets }: TopBarProps) {
     <header className={styles.topBar}>
       <div className={styles.brand}>
         <span className={styles.wordmark}>SomaCue</span>
-        <span className={styles.context}>Stage 4, feasibility</span>
+        <span className={styles.context}>Clinical 3D workspace</span>
       </div>
 
       <div className={styles.actions}>
         <button type="button" className={styles.assetButton} onClick={onOpenAssets}>
           <NotesIcon size={16} />
-          Asset notes
+          Resources
         </button>
         <span className={styles.divider} aria-hidden="true" />
         <button

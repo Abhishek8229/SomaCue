@@ -1,0 +1,177 @@
+.page {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(380px, 0.7fr);
+  gap: clamp(40px, 8vw, 128px);
+  align-items: center;
+  min-height: calc(100dvh - var(--nav-h));
+  padding: clamp(32px, 7vw, 96px) var(--gutter);
+  background:
+    radial-gradient(circle at 12% 18%, color-mix(in oklab, var(--color-accent) 10%, transparent), transparent 28rem),
+    var(--color-paper);
+}
+
+.page::before {
+  content: "A shared visual language\A for rehabilitation.";
+  display: flex;
+  align-items: flex-end;
+  min-height: 560px;
+  padding: clamp(28px, 5vw, 64px);
+  border-radius: var(--radius-shell);
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in oklab, var(--stage-accent) 18%, transparent), transparent 34%),
+    var(--stage-bg);
+  color: var(--stage-ink);
+  white-space: pre;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 5vw, 5.2rem);
+  font-weight: 500;
+  line-height: 0.96;
+  letter-spacing: -0.07em;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  width: min(480px, 100%);
+  justify-self: center;
+  padding: clamp(24px, 4vw, 48px);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-shell);
+  background: color-mix(in oklab, var(--color-paper) 92%, transparent);
+  box-shadow: var(--shadow-card);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.title {
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+
+.subtitle {
+  color: var(--color-muted);
+  font-size: var(--text-ui);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.label {
+  color: var(--color-ink-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  min-height: 48px;
+  padding-inline: var(--space-sm);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  font-size: var(--text-ui);
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+  outline: 0;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 18%, transparent);
+}
+
+.alert {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-input);
+  background: color-mix(in oklab, var(--color-error) 8%, var(--color-paper));
+  color: var(--color-error);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.submit {
+  min-height: 48px;
+  margin-top: var(--space-xs);
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-input);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-short) var(--ease-out),
+    border-color var(--dur-short) var(--ease-out),
+    transform var(--dur-short) var(--ease-out);
+}
+
+.submit:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  transform: translateY(-2px);
+}
+
+.submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.switch {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.switch a {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.submit:focus-visible,
+.input:focus-visible,
+.switch a:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 52rem) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page::before {
+    min-height: 240px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .card {
+    justify-self: stretch;
+    width: 100%;
+    max-width: 520px;
+    margin-inline: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submit {
+    transition: none;
+  }
+}
