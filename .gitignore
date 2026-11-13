@@ -6,3 +6,4 @@ dist
 !.env.example
 apps/web/generated/
 *.tsbuildinfo
+apps/web/public/uploads/
