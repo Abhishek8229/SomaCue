@@ -1,144 +1,1042 @@
 .shell {
-  display: grid;
-  grid-template-columns: minmax(360px, 38fr) minmax(0, 62fr);
-  grid-template-rows: minmax(0, 1fr);
-  height: calc(100dvh - var(--nav-h));
+  --workspace-bg: #07090b;
+  --workspace-panel: rgba(255, 255, 255, 0.055);
+  --workspace-panel-strong: rgba(255, 255, 255, 0.085);
+  --workspace-border: rgba(255, 255, 255, 0.11);
+  --workspace-muted: rgba(222, 230, 231, 0.56);
+  --workspace-subtle: rgba(222, 230, 231, 0.34);
+  --workspace-mint: #91e4c2;
+  --workspace-blue: #8cb8f4;
+  --workspace-amber: #e7c77f;
+  --workspace-danger: #ff6d65;
   min-height: 0;
-  background: var(--stage-bg);
-  overflow: clip;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(54, 95, 91, 0.12), transparent 34rem),
+    var(--workspace-bg);
+  color: #f5f8f6;
+  font-family: var(--font-body);
 }
 
-.intake {
+.topBar,
+.bottomBar {
+  border-color: var(--workspace-border);
+  background: rgba(12, 16, 17, 0.8);
+}
+
+.topBar {
+  gap: 20px;
+}
+
+.brandLockup,
+.topActions,
+.timeline,
+.playback,
+.sessionHud,
+.fieldFooter,
+.panelHeader,
+.progressHeader,
+.questionActions,
+.stageTopline,
+.stageControls {
+  display: flex;
+  align-items: center;
+}
+
+.brandLockup {
+  min-width: 220px;
+  gap: 10px;
+}
+
+.brandGlyph {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(145, 228, 194, 0.5);
+  border-radius: 9px;
+  background: rgba(145, 228, 194, 0.12);
+  color: var(--workspace-mint);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.brandName,
+.brandContext,
+.kicker,
+.stageEyebrow,
+.stageMode,
+.hudLabel,
+.uploadHint,
+.uploadLink,
+.feedTime {
+  font-family: var(--font-outlier);
+}
+
+.brandName {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.brandContext {
+  margin-top: 1px;
+  color: var(--workspace-muted);
+  font-size: 9px;
+}
+
+.timeline {
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.timelineButton,
+.ghostButton,
+.iconButton,
+.controlButton,
+.speedButton,
+.choiceButton,
+.skipButton,
+.stageControl,
+.stageControlIcon,
+.addCue,
+.micButton,
+.exerciseCard,
+.haltButton {
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.timelineButton:focus-visible,
+.ghostButton:focus-visible,
+.iconButton:focus-visible,
+.controlButton:focus-visible,
+.playButton:focus-visible,
+.speedButton:focus-visible,
+.choiceButton:focus-visible,
+.skipButton:focus-visible,
+.stageControl:focus-visible,
+.stageControlIcon:focus-visible,
+.addCue:focus-visible,
+.micButton:focus-visible,
+.exerciseCard:focus-visible,
+.haltButton:focus-visible,
+.uploadZone:focus-within,
+.textarea:focus-visible {
+  outline: 2px solid var(--workspace-mint);
+  outline-offset: 3px;
+}
+
+.timelineButton:active,
+.ghostButton:active,
+.iconButton:active,
+.controlButton:active,
+.playButton:active,
+.speedButton:active,
+.choiceButton:active,
+.skipButton:active,
+.stageControl:active,
+.stageControlIcon:active,
+.addCue:active,
+.micButton:active,
+.exerciseCard:active,
+.haltButton:active {
+  transform: translateY(1px);
+}
+
+.timelineButton:disabled,
+.ghostButton:disabled,
+.iconButton:disabled,
+.controlButton:disabled,
+.playButton:disabled,
+.speedButton:disabled,
+.choiceButton:disabled,
+.skipButton:disabled,
+.stageControl:disabled,
+.stageControlIcon:disabled,
+.addCue:disabled,
+.micButton:disabled,
+.exerciseCard:disabled,
+.haltButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.timelineButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: var(--workspace-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.timelineButton:hover,
+.timelineButtonActive {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.timelineButtonActive {
+  box-shadow: inset 0 -2px var(--workspace-mint);
+}
+
+.timelineDot,
+.statusPulse {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.timelineButtonActive .timelineDot {
+  color: var(--workspace-mint);
+  box-shadow: 0 0 9px rgba(145, 228, 194, 0.8);
+}
+
+.topActions {
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 245px;
+}
+
+.ghostButton,
+.iconButton,
+.controlButton,
+.speedButton,
+.stageControl,
+.stageControlIcon,
+.addCue {
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.ghostButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--workspace-muted);
+  font-size: 11px;
+}
+
+.ghostButton:hover,
+.iconButton:hover,
+.controlButton:hover,
+.stageControl:hover,
+.stageControlIcon:hover,
+.addCue:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.syncStatus,
+.listeningBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--workspace-mint);
+  font-family: var(--font-outlier);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.statusPulse {
+  box-shadow: 0 0 10px currentColor;
+}
+
+.iconButton,
+.controlButton,
+.stageControlIcon,
+.skipButton {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--workspace-muted);
+}
+
+.workspace {
+  min-height: 0;
+}
+
+.sideColumn {
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--color-rule);
-  background: var(--color-paper);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 48px;
+}
+
+.sectionHeading h1,
+.panel h2 {
+  color: #f5f8f6;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.kicker {
+  margin-bottom: 7px;
+  color: var(--workspace-mint);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.stepCount {
+  padding: 4px 7px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 5px;
+  color: var(--workspace-muted);
+  font-family: var(--font-outlier);
+  font-size: 9px;
+}
+
+.uploadZone,
+.panel,
+.progressCard,
+.exerciseCard {
+  border: 1px solid var(--workspace-border);
+  background: var(--workspace-panel);
+  backdrop-filter: blur(15px);
+}
+
+.uploadZone {
+  display: flex;
+  min-height: 157px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-style: dashed;
+  border-radius: 12px;
+  color: var(--workspace-muted);
+  cursor: pointer;
+  text-align: center;
+}
+
+.uploadZone:hover,
+.uploadZoneDragging {
+  border-color: rgba(145, 228, 194, 0.65);
+  background: rgba(145, 228, 194, 0.06);
+}
+
+.uploadIcon {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  margin-bottom: 3px;
+  place-items: center;
+  border: 1px solid rgba(145, 228, 194, 0.35);
+  border-radius: 10px;
+  color: var(--workspace-mint);
+}
+
+.uploadTitle {
+  color: #f5f8f6;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.uploadHint,
+.uploadLink {
+  font-size: 9px;
+}
+
+.uploadLink {
+  color: var(--workspace-mint);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.panel,
+.progressCard {
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.panelLabel,
+.fieldFooter,
+.feed,
+.progressCard p {
+  color: var(--workspace-muted);
+  font-size: 10px;
+}
+
+.panelLabel {
+  display: block;
+  margin-bottom: 9px;
+  color: #e3ebe8;
+  font-size: 11px;
+}
+
+.textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  color: #eef4f0;
+  font-size: 11px;
+  line-height: 1.5;
+  outline: 0;
+  padding: 10px;
+}
+
+.textarea:focus {
+  border-color: rgba(145, 228, 194, 0.6);
+}
+
+.fieldFooter {
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--workspace-subtle);
+  font-size: 9px;
+}
+
+.panelHeader {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panelHeader .kicker {
+  margin-bottom: 6px;
+}
+
+.aiBadge {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(145, 228, 194, 0.14);
+  color: var(--workspace-mint);
+  font-family: var(--font-outlier);
+  font-size: 9px;
+}
+
+.questionText {
+  margin-top: 18px;
+  color: #dce5e1;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.questionActions {
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.choiceButton {
+  padding: 7px 9px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-muted);
+  font-size: 10px;
+}
+
+.choiceButton:hover {
+  border-color: rgba(145, 228, 194, 0.5);
+  color: var(--workspace-mint);
+}
+
+.questionActions .skipButton {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
 }
 
 .stage {
-  position: relative;
+  isolation: isolate;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  border-color: var(--workspace-border);
   background:
-    radial-gradient(circle at 50% 40%, color-mix(in oklab, var(--stage-accent) 8%, transparent), transparent 34%),
-    var(--stage-bg);
-  box-shadow: inset 1px 0 color-mix(in oklab, var(--stage-ink) 4%, transparent);
+    radial-gradient(circle at 50% 48%, rgba(113, 197, 173, 0.12), transparent 22rem),
+    rgba(255, 255, 255, 0.035);
 }
 
-.roster {
+.stageGrid {
   position: absolute;
-  top: var(--space-md);
-  right: var(--space-md);
-  z-index: var(--z-raised);
-  display: flex;
-  flex-direction: column;
-  width: min(320px, calc(100% - var(--space-md) * 2));
-  max-height: calc(100% - var(--space-md) * 2);
-  overflow-y: auto;
-  padding: var(--space-md);
-  border: 1px solid var(--stage-rule-strong);
-  border-radius: var(--radius-shell);
-  background: color-mix(in oklab, var(--stage-panel) 92%, transparent);
-  color: var(--stage-ink);
-  box-shadow: var(--shadow-dialog);
-  backdrop-filter: blur(6px);
+  inset: 14% 12%;
+  opacity: 0.16;
+  background-image: linear-gradient(rgba(145, 228, 194, 0.17) 1px, transparent 1px), linear-gradient(90deg, rgba(145, 228, 194, 0.17) 1px, transparent 1px);
+  background-size: 58px 58px;
+  mask-image: radial-gradient(ellipse at center, #000 0%, transparent 68%);
+  transform: perspective(600px) rotateX(58deg) translateY(28%);
 }
 
-.rosterTitle {
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
-  letter-spacing: -0.01em;
-  color: var(--stage-ink);
-}
-
-.rosterMeta {
-  margin-top: var(--space-3xs);
-  font-family: var(--font-outlier);
-  font-size: var(--text-xs);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--stage-muted);
-}
-
-.rosterList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2xs);
-  margin: var(--space-sm) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.rosterItem {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3xs);
-  padding: var(--space-xs);
-  border: 1px solid var(--stage-rule);
-  border-radius: var(--radius-input);
-  background: var(--stage-well);
-}
-
-.rosterName {
-  font-size: var(--text-ui);
-  font-weight: 600;
-  color: var(--stage-ink);
-}
-
-.rosterPlanes {
-  font-family: var(--font-outlier);
-  font-size: var(--text-xs);
-  color: var(--stage-muted);
-}
-
-.lock {
+.stageGlow {
   position: absolute;
-  inset: 0;
-  z-index: var(--z-modal);
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  background: rgba(111, 212, 178, 0.08);
+  filter: blur(45px);
+}
+
+.stageOrbit {
+  position: absolute;
+  width: min(62%, 390px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(145, 228, 194, 0.18);
+  border-radius: 50%;
+  box-shadow: 0 0 90px rgba(145, 228, 194, 0.08);
+}
+
+.bodySilhouette {
+  position: relative;
+  z-index: 1;
+  width: 145px;
+  height: 320px;
+  filter: drop-shadow(0 0 28px rgba(145, 228, 194, 0.18));
+}
+
+.bodyHead,
+.bodyTorso,
+.bodyLimb,
+.focusJoint {
+  position: absolute;
+  background: linear-gradient(135deg, rgba(208, 244, 227, 0.8), rgba(92, 161, 141, 0.38));
+  box-shadow: inset -5px -5px 13px rgba(14, 53, 47, 0.45), inset 4px 4px 9px rgba(255, 255, 255, 0.22);
+}
+
+.bodyHead {
+  top: 0;
+  left: 51px;
+  width: 43px;
+  height: 47px;
+  border-radius: 48% 48% 44% 44%;
+}
+
+.bodyTorso {
+  top: 52px;
+  left: 36px;
+  width: 73px;
+  height: 111px;
+  border-radius: 35% 35% 28% 28%;
+  clip-path: polygon(20% 0, 80% 0, 100% 30%, 77% 100%, 23% 100%, 0 30%);
+}
+
+.bodyLimb {
+  width: 21px;
+  border-radius: 20px;
+  transform-origin: top center;
+}
+
+.bodyArmLeft,
+.bodyArmRight {
+  top: 60px;
+  height: 130px;
+}
+
+.bodyArmLeft {
+  left: 25px;
+  transform: rotate(12deg);
+}
+
+.bodyArmRight {
+  right: 25px;
+  transform: rotate(-12deg);
+}
+
+.bodyLegLeft,
+.bodyLegRight {
+  top: 151px;
+  height: 165px;
+}
+
+.bodyLegLeft {
+  left: 45px;
+  transform: rotate(3deg);
+}
+
+.bodyLegRight {
+  right: 45px;
+  transform: rotate(-3deg);
+}
+
+.focusJoint {
+  top: 213px;
+  left: 57px;
+  z-index: 2;
+  width: 31px;
+  height: 31px;
+  border: 2px solid #f4d28d;
+  border-radius: 50%;
+  background: rgba(231, 199, 127, 0.22);
+  box-shadow: 0 0 0 7px rgba(231, 199, 127, 0.08), 0 0 24px rgba(231, 199, 127, 0.6);
+}
+
+.stageTopline {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  left: 20px;
+  z-index: 2;
+  justify-content: space-between;
+}
+
+.liveTag,
+.stageMode {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--workspace-muted);
+  font-family: var(--font-outlier);
+  font-size: 9px;
+}
+
+.liveTag {
+  color: var(--workspace-mint);
+}
+
+.stageLabel {
+  position: absolute;
+  bottom: 21px;
+  left: 22px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: rgba(239, 247, 243, 0.82);
+  font-size: 12px;
+}
+
+.stageEyebrow {
+  color: var(--workspace-subtle);
+  font-size: 9px;
+}
+
+.stageControls {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  z-index: 2;
+  gap: 5px;
+}
+
+.stageControl {
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--workspace-subtle);
+  font-size: 9px;
+}
+
+.stageControlIcon {
+  border: 1px solid var(--workspace-border);
+}
+
+.planList {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.exerciseCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.exerciseCard:hover {
+  border-color: rgba(145, 228, 194, 0.36);
+  background: var(--workspace-panel-strong);
+}
+
+.exerciseIndex {
   display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-lg);
-  text-align: center;
-  background: color-mix(in oklab, var(--stage-bg) 86%, var(--color-scrim));
-  backdrop-filter: grayscale(100%);
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  font-family: var(--font-outlier);
+  font-size: 9px;
 }
 
-.lockTitle {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  letter-spacing: -0.01em;
-  color: var(--stage-ink);
+.exerciseIndexmint {
+  background: rgba(145, 228, 194, 0.13);
+  color: var(--workspace-mint);
 }
 
-.lockBody {
-  max-width: 42ch;
-  font-size: var(--text-ui);
-  line-height: 1.55;
-  color: var(--stage-muted);
+.exerciseIndexblue {
+  background: rgba(140, 184, 244, 0.13);
+  color: var(--workspace-blue);
 }
 
-@media (max-width: 63.9rem) {
+.exerciseIndexamber {
+  background: rgba(231, 199, 127, 0.13);
+  color: var(--workspace-amber);
+}
+
+.exerciseCopy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.exerciseCopy strong {
+  overflow: hidden;
+  color: #e8f0ec;
+  font-size: 11px;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exerciseCopy small {
+  color: var(--workspace-muted);
+  font-family: var(--font-outlier);
+  font-size: 9px;
+}
+
+.dictationPanel {
+  flex: 1;
+  min-height: 220px;
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  margin-top: 22px;
+  line-height: 1.45;
+}
+
+.feed p {
+  display: grid;
+  grid-template-columns: 35px 1fr;
+  gap: 8px;
+}
+
+.feedTime {
+  color: var(--workspace-subtle);
+  font-size: 8px;
+}
+
+.feedMuted {
+  color: var(--workspace-subtle);
+}
+
+.addCue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+  padding: 0;
+  background: transparent;
+  color: var(--workspace-mint);
+  font-size: 10px;
+}
+
+.progressCard {
+  padding: 13px 14px;
+}
+
+.progressHeader {
+  justify-content: space-between;
+  color: var(--workspace-muted);
+  font-size: 10px;
+}
+
+.progressHeader strong {
+  color: var(--workspace-mint);
+  font-family: var(--font-outlier);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.progressTrack {
+  height: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.progressTrack span {
+  display: block;
+  width: 68%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--workspace-mint);
+  box-shadow: 0 0 10px rgba(145, 228, 194, 0.55);
+}
+
+.progressCard p {
+  margin-top: 8px;
+  color: var(--workspace-subtle);
+  font-size: 9px;
+}
+
+.bottomBar {
+  gap: 24px;
+}
+
+.sessionHud {
+  min-width: 220px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.hudLabel {
+  color: var(--workspace-mint);
+  font-size: 9px;
+}
+
+.sessionHud strong {
+  color: #e4ece8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sessionHud strong span {
+  margin: 0 4px;
+  color: var(--workspace-subtle);
+}
+
+.playback {
+  gap: 7px;
+}
+
+.playButton {
+  display: grid;
+  width: 37px;
+  height: 37px;
+  place-items: center;
+  border: 1px solid rgba(145, 228, 194, 0.7);
+  border-radius: 50%;
+  background: var(--workspace-mint);
+  color: #0c3025;
+  cursor: pointer;
+}
+
+.playButton:hover {
+  box-shadow: 0 0 20px rgba(145, 228, 194, 0.25);
+}
+
+.speedGroup {
+  display: flex;
+  margin-left: 9px;
+  padding: 3px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.speedButton {
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--workspace-subtle);
+  font-family: var(--font-outlier);
+  font-size: 9px;
+}
+
+.speedButtonActive {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f8f6;
+}
+
+.micButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--workspace-muted);
+  font-size: 10px;
+}
+
+.micButton:hover,
+.micButtonActive {
+  border-color: rgba(145, 228, 194, 0.55);
+  color: var(--workspace-mint);
+}
+
+.haltButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 150px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 109, 101, 0.6);
+  border-radius: 9px;
+  background: rgba(255, 109, 101, 0.11);
+  color: #ffaaa4;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.haltButton:hover {
+  background: rgba(255, 109, 101, 0.18);
+}
+
+.haltIcon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(255, 109, 101, 0.7);
+  border-radius: 7px;
+  color: var(--workspace-danger);
+  font-family: var(--font-outlier);
+  font-size: 12px;
+}
+
+.haltButton span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.haltButton strong {
+  color: #ffccc8;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.haltButton small {
+  color: rgba(255, 170, 164, 0.75);
+  font-size: 8px;
+}
+
+@media (max-width: 1100px) {
+  .brandLockup,
+  .topActions {
+    min-width: auto;
+  }
+
+  .brandContext,
+  .historyButton,
+  .syncStatus {
+    display: none;
+  }
+
+  .timelineButton {
+    padding-inline: 7px;
+  }
+
+  .workspace {
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+  }
+
+  .leftColumn,
+  .rightColumn {
+    grid-column: span 3;
+  }
+
+  .stage {
+    grid-column: span 4;
+  }
+}
+
+@media (max-width: 780px) {
   .shell {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto;
     height: auto;
     min-height: calc(100dvh - var(--nav-h));
     overflow: visible;
   }
 
-  .stage {
-    order: -1;
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
-    height: min(62vh, 620px);
+  .topBar {
+    height: auto;
+    min-height: 64px;
+    flex-wrap: wrap;
+    padding-block: 10px;
   }
 
-  .intake {
-    border-right: 0;
-    border-top: 1px solid var(--color-rule);
+  .timeline {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .workspace {
+    display: flex;
+    min-height: auto;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .sideColumn,
+  .stage {
+    overflow: visible;
+  }
+
+  .stage {
+    order: -1;
+    min-height: 510px;
+  }
+
+  .bottomBar {
+    min-height: 132px;
+    flex-wrap: wrap;
+    padding-block: 14px;
+  }
+
+  .sessionHud {
+    min-width: auto;
+  }
+
+  .playback {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .haltButton {
+    min-width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghostButton,
+  .iconButton,
+  .controlButton,
+  .speedButton,
+  .stageControl,
+  .stageControlIcon,
+  .addCue {
+    transition: none;
   }
 }

@@ -3,6 +3,7 @@
 /* Hallmark · pre-emit critique: P5 H4 E5 S4 R5 V4 · weakest: V, the bounded single-screen brief fixes the shape; variety sits in the 35/65 vitrine and the stage-first mobile order */
 @import "./tokens.css";
 @import "./base.css";
+@import "tailwindcss";
 
 html {
   height: 100%;
@@ -18,4 +19,138 @@ button,
 select,
 input {
   -webkit-tap-highlight-color: transparent;
+}
+
+.workspace-shell {
+  background: var(--workspace-canvas);
+  color: var(--stage-ink);
+  isolation: isolate;
+}
+
+.workspace-header {
+  background: var(--workspace-header);
+  border-color: var(--workspace-rule);
+  box-shadow: var(--workspace-header-shadow);
+}
+
+.workspace-grid {
+  gap: var(--space-md);
+  padding: var(--space-md);
+}
+
+.workspace-rail {
+  scrollbar-color: var(--workspace-rule-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.workspace-shell .workspace-panel {
+  background: var(--workspace-panel);
+  border-color: var(--workspace-rule);
+  color: var(--stage-ink);
+  box-shadow: var(--workspace-panel-shadow);
+}
+
+.workspace-shell .workspace-panel:hover {
+  border-color: var(--workspace-rule-strong);
+}
+
+.workspace-shell .workspace-panel [class*="bg-zinc-950"] {
+  background: var(--workspace-well);
+  color: var(--stage-ink);
+}
+
+.workspace-shell .workspace-panel [class*="border-white/10"] {
+  border-color: var(--workspace-rule);
+}
+
+.workspace-shell .workspace-panel [class*="border-white/15"] {
+  border-color: var(--workspace-rule);
+}
+
+.workspace-shell .workspace-calendar {
+  background: var(--workspace-panel-raised);
+}
+
+.workspace-shell .workspace-calendar .workspace-calendar-nav,
+.workspace-shell .workspace-calendar .workspace-calendar-selected {
+  background: var(--workspace-signal);
+  color: var(--workspace-signal-ink);
+}
+
+.workspace-shell .workspace-calendar .workspace-calendar-selected {
+  box-shadow: var(--workspace-selected-shadow);
+}
+
+.workspace-shell .workspace-calendar .workspace-calendar-nav:hover {
+  background: var(--workspace-signal-hover);
+}
+
+.workspace-shell .workspace-calendar .workspace-calendar-today {
+  color: var(--workspace-signal);
+}
+
+.workspace-shell .workspace-stage {
+  min-height: 0;
+  background: var(--stage-bg);
+  border-color: var(--workspace-rule-strong);
+  box-shadow: var(--workspace-stage-inset);
+}
+
+.workspace-shell .workspace-stage::before {
+  position: absolute;
+  inset: 12%;
+  border: 1px solid var(--workspace-stage-ring);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+
+.workspace-shell .workspace-stage::after {
+  position: absolute;
+  inset: 18% 26%;
+  border-top: 1px solid var(--workspace-stage-line);
+  border-bottom: 1px solid var(--workspace-stage-line);
+  content: "";
+  pointer-events: none;
+}
+
+.workspace-shell .workspace-live {
+  background: var(--workspace-live);
+  color: var(--stage-ink);
+}
+
+.workspace-shell .workspace-dialog {
+  background: var(--workspace-panel);
+  border-color: var(--workspace-rule-strong);
+  box-shadow: var(--shadow-dialog);
+}
+
+.workspace-shell [class*="text-[9px]"][class*="text-emerald"] {
+  color: var(--stage-accent);
+}
+
+.workspace-shell [class*="text-white/55"],
+.workspace-shell [class*="text-white/60"],
+.workspace-shell [class*="text-white/65"] {
+  color: var(--workspace-quiet);
+}
+
+@media (max-width: 70rem) {
+  .workspace-grid {
+    overflow-y: auto;
+  }
+
+  .workspace-grid > .workspace-rail,
+  .workspace-grid > .workspace-stage,
+  .workspace-grid > .workspace-right-rail {
+    grid-column: span 12;
+    min-height: 420px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-shell .workspace-panel,
+  .workspace-shell .workspace-stage {
+    transition: none;
+  }
 }

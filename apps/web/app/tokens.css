@@ -96,6 +96,25 @@
   --stage-grid: oklch(34% 0.014 198);
   --stage-grid-strong: oklch(47% 0.018 195);
   --stage-shadow: oklch(4% 0.01 200 / 0.55);
+
+  --workspace-canvas: oklch(9.2% 0.014 198);
+  --workspace-header: oklch(12.8% 0.018 198);
+  --workspace-panel: oklch(14.8% 0.018 198);
+  --workspace-panel-raised: oklch(17.2% 0.021 198);
+  --workspace-well: oklch(10.8% 0.016 198);
+  --workspace-rule: oklch(27% 0.018 198);
+  --workspace-rule-strong: oklch(38% 0.022 198);
+  --workspace-signal: oklch(78% 0.14 68);
+  --workspace-signal-ink: oklch(22% 0.035 68);
+  --workspace-quiet: oklch(72% 0.018 198);
+  --workspace-header-shadow: 0 1px 0 oklch(92% 0.01 198 / 0.04);
+  --workspace-panel-shadow: 0 1px 0 oklch(92% 0.01 198 / 0.03);
+  --workspace-signal-hover: oklch(84% 0.13 68);
+  --workspace-stage-inset: 0 0 0 1px oklch(90% 0.01 198 / 0.025);
+  --workspace-stage-ring: oklch(80% 0.02 198 / 0.08);
+  --workspace-stage-line: oklch(80% 0.02 198 / 0.07);
+  --workspace-live: oklch(12.2% 0.017 198);
+  --workspace-selected-shadow: 0 0 0 2px oklch(78% 0.14 68 / 0.2);
 }
 
 html[data-theme="dark"] {

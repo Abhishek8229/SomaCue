@@ -38,6 +38,56 @@ model ClinicalAssessment {
   @@index([safetyStatus])
 }
 
+model ClinicalReport {
+  id              String   @id @default(uuid())
+  patientId       String
+  weekNumber      Int      @default(1)
+  primarySymptoms String
+  fileUrls        String[]
+  adaptiveData    Json     @db.JsonB
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  triageQuiz    TriageQuiz?
+  treatmentPlan TreatmentPlan?
+
+  @@index([patientId])
+  @@index([createdAt])
+}
+
+model TriageQuiz {
+  id              String       @id @default(uuid())
+  clinicalReportId String       @unique
+  questions       Json         @db.JsonB
+  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
+
+  clinicalReport ClinicalReport @relation(fields: [clinicalReportId], references: [id], onDelete: Cascade)
+  answers       QuizAnswer[]
+}
+
+model QuizAnswer {
+  id          String     @id @default(uuid())
+  triageQuizId String
+  questionId  String
+  answer      String
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+
+  triageQuiz TriageQuiz @relation(fields: [triageQuizId], references: [id], onDelete: Cascade)
+
+  @@unique([triageQuizId, questionId])
+  @@index([triageQuizId])
+}
+
+model TreatmentPlan {
+  id              String         @id @default(uuid())
+  clinicalReportId String         @unique
+  routine         Json           @db.JsonB
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+
+  clinicalReport ClinicalReport @relation(fields: [clinicalReportId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+}
+
 model Exercise {
   id             String   @id @default(cuid())
   name           String
