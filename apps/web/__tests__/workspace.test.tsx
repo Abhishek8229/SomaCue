@@ -1,72 +1,79 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import WorkspacePage from "@/app/workspace/page";
 
-vi.mock("@/components/workspace/StagePanel", () => ({
-  StagePanel: ({ activeDemo }: { activeDemo: string }) => (
-    <div data-testid="stage-panel" data-active-demo={activeDemo}>
-      3D stage
-    </div>
-  ),
+vi.mock("@/actions/intake", () => ({ submitIntakeForm: vi.fn() }));
+vi.mock("@/hooks/useDictation", () => ({
+  useDictation: () => ({
+    isListening: false,
+    transcript: "",
+    startListening: vi.fn(),
+    stopListening: vi.fn(),
+  }),
 }));
 
-const REPORT = "L4-L5 disc herniation with radiculopathy";
+import { SidebarIntake } from "@/app/workspace/WorkspaceParts";
 
-function submitReport() {
-  fireEvent.change(screen.getByLabelText(/MRI \/ medical report/i), {
-    target: { value: REPORT },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Submit for Analysis" }));
+const UUID = "12f80538-4e07-4160-82c1-48d2dccb3612";
+
+function renderIntake() {
+  return render(
+    <SidebarIntake
+      flowError={null}
+      flowPhase="discovery"
+      onError={vi.fn()}
+      onPreparing={vi.fn()}
+      onRerunAnalysis={vi.fn()}
+      onTriageReady={vi.fn()}
+      reportsSubmitted={false}
+    />,
+  );
 }
 
-async function waitForScreening() {
-  await screen.findByText(/Question 1 of/i, {}, { timeout: 10000 });
-}
+beforeEach(() => {
+  globalThis.URL.createObjectURL = vi.fn(() => "blob:preview");
+  globalThis.URL.revokeObjectURL = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ success: true, storage: "local", url: `/uploads/${UUID}.pdf` }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ),
+  );
+});
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () =>
-      new Response(
-        JSON.stringify({ region: "lumbar", level: "L4", pathology: "herniation" }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    ),
-  );
-});
+describe("Workspace intake", () => {
+  it("offers separate imaging and prescription dropzones", () => {
+    renderIntake();
 
-describe("Workspace integration", () => {
-  it("locks the 3D viewer when a red flag is reported", async () => {
-    render(<WorkspacePage />);
-    submitReport();
-    await waitForScreening();
+    const scans = screen.getByLabelText(/Medical scans \/ imaging/i) as HTMLInputElement;
+    const prescriptions = screen.getByLabelText(/Clinical prescriptions & notes/i) as HTMLInputElement;
 
-    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
-
-    expect(screen.getByText(/Red flag identified/i)).toBeInTheDocument();
-    expect(screen.getByTestId("stage-lock")).toBeInTheDocument();
-    expect(screen.queryByTestId("approved-roster")).not.toBeInTheDocument();
+    expect(scans.type).toBe("file");
+    expect(prescriptions.type).toBe("file");
+    expect(scans).not.toBe(prescriptions);
   });
 
-  it("filters contraindicated exercises and renders the approved list", async () => {
-    render(<WorkspacePage />);
-    submitReport();
-    await waitForScreening();
+  it("keeps Start diagnostic locked until the no-prescription acknowledgment is ticked", async () => {
+    const { container } = renderIntake();
+    const start = screen.getByRole("button", { name: "Start diagnostic" });
 
-    for (let index = 0; index < 4; index += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "No" }));
-    }
+    const scanInput = container.querySelector("#intake-scan-files") as HTMLInputElement;
+    fireEvent.change(scanInput, {
+      target: { files: [new File(["x"], "mri.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(screen.getByText(/Uploaded successfully/)).toBeInTheDocument());
+    expect(start).toBeDisabled();
 
-    expect(await screen.findByTestId("approved-roster")).toBeInTheDocument();
-    expect(screen.getByText("Neutral breathing")).toBeInTheDocument();
-    expect(screen.queryByText("Deadlift")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("stage-lock")).not.toBeInTheDocument();
-    expect(screen.getByTestId("stage-panel")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /may not be completely accurate/i }));
+    expect(start).toBeEnabled();
   });
 });

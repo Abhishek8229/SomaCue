@@ -14,6 +14,7 @@ export type StagePalette = {
   grid: string;
   gridStrong: string;
   shadow: string;
+  body: string;
 };
 
 const TOKENS: Record<keyof StagePalette, string> = {
@@ -32,6 +33,7 @@ const TOKENS: Record<keyof StagePalette, string> = {
   grid: "--stage-grid",
   gridStrong: "--stage-grid-strong",
   shadow: "--stage-shadow",
+  body: "--stage-body",
 };
 
 /**

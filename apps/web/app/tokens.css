@@ -96,6 +96,7 @@
   --stage-grid: oklch(34% 0.014 198);
   --stage-grid-strong: oklch(47% 0.018 195);
   --stage-shadow: oklch(4% 0.01 200 / 0.55);
+  --stage-body: oklch(64% 0.065 58);
 
   --workspace-canvas: oklch(9.2% 0.014 198);
   --workspace-header: oklch(12.8% 0.018 198);
@@ -115,6 +116,10 @@
   --workspace-stage-line: oklch(80% 0.02 198 / 0.07);
   --workspace-live: oklch(12.2% 0.017 198);
   --workspace-selected-shadow: 0 0 0 2px oklch(78% 0.14 68 / 0.2);
+
+  --landing-signal: oklch(84.5% 0.143 165);
+  --landing-signal-ink: oklch(18% 0.03 175);
+  --landing-signal-hover: oklch(90% 0.11 165);
 }
 
 html[data-theme="dark"] {

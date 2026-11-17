@@ -1,81 +1,48 @@
 "use server";
 
-import { BlobServiceClient } from "@azure/storage-blob";
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
 import { revalidatePath } from "next/cache";
 import {
   generateFinalRoutine,
   generateTriageQuiz,
-  rescheduleTreatmentPlan,
   type QuizAnswers,
-  type TreatmentPlan,
+  type TriageQuestion,
 } from "./generatePlan";
 import { getCurrentUser } from "@/lib/auth/session";
+import {
+  deriveConditionSource,
+  screenQuizAnswers,
+  screenRedFlags,
+  type DetectedCondition,
+  type Escalation,
+} from "@/lib/clinical/assessment";
+import { toEscalation } from "@/lib/clinical/server-escalation";
 import { prisma } from "@/lib/db/prisma";
+import {
+  MAX_FILES_PER_CATEGORY,
+  isTrustedUploadUrl,
+  reportFilesFromRecord,
+} from "@/lib/intake/reportFiles";
+import { storeUpload } from "@/lib/intake/storage";
+import { validateUploadFile } from "@/lib/intake/uploadGuard";
+import { repairPlan } from "@/lib/kinematics/plan-repair";
 
-async function saveLocalUpload(file: File) {
-  const uploadsDirectory = join(process.cwd(), "public", "uploads");
-  await mkdir(uploadsDirectory, { recursive: true });
+function readUploadUrls(formData: FormData, field: string) {
+  const urls = [
+    ...new Set(
+      formData
+        .getAll(field)
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  ];
 
-  const extension = extname(file.name).replace(/[^a-zA-Z0-9.]/g, "");
-  const fileName = `${randomUUID()}${extension}`;
-  await writeFile(join(uploadsDirectory, fileName), Buffer.from(await file.arrayBuffer()));
-
-  return `/uploads/${fileName}`;
-}
-
-async function uploadFileToAzure(file: File) {
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error("A non-empty file is required.");
+  if (urls.length > MAX_FILES_PER_CATEGORY) {
+    throw new Error(`Upload at most ${MAX_FILES_PER_CATEGORY} files in each section.`);
+  }
+  if (!urls.every(isTrustedUploadUrl)) {
+    throw new Error("One of the uploaded files could not be verified. Please upload it again.");
   }
 
-  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING?.trim();
-  if (!connectionString) {
-    console.warn("[SomaCue upload] Azure storage is not configured; using local upload fallback.");
-    return { url: await saveLocalUpload(file), storage: "local" as const };
-  }
-
-  try {
-    const extension = extname(file.name).replace(/[^a-zA-Z0-9.]/g, "");
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-    const containerClient = blobServiceClient.getContainerClient("patient-scans");
-    const blockBlobClient = containerClient.getBlockBlobClient(`${randomUUID()}${extension}`);
-
-    await blockBlobClient.uploadData(Buffer.from(await file.arrayBuffer()));
-    return { url: blockBlobClient.url, storage: "azure" as const };
-  } catch (error) {
-    const details =
-      error instanceof Error
-        ? { message: error.message, stack: error.stack }
-        : { message: String(error) };
-    console.error("[SomaCue upload] Azure Blob upload failed.", {
-      fileName: file.name,
-      fileSize: file.size,
-      ...details,
-    });
-
-    if (process.env.ALLOW_LOCAL_UPLOAD_FALLBACK !== "false") {
-      console.warn("[SomaCue upload] Using local upload fallback after Azure failure.");
-      return { url: await saveLocalUpload(file), storage: "local" as const };
-    }
-
-    throw new Error(`Azure upload failed: ${details.message}`);
-  }
-}
-
-export async function uploadScanFile(formData: FormData) {
-  const scanFile = formData.get("scanFile");
-
-  if (!(scanFile instanceof File) || scanFile.size === 0) {
-    throw new Error("A non-empty file is required.");
-  }
-
-  return {
-    success: true,
-    ...(await uploadFileToAzure(scanFile)),
-  };
+  return urls;
 }
 
 export async function submitIntakeForm(formData: FormData) {
@@ -91,27 +58,98 @@ export async function submitIntakeForm(formData: FormData) {
     throw new Error("Primary symptoms are required.");
   }
 
-  const submittedFileUrls = formData
-    .getAll("fileUrl")
-    .filter((value): value is string => typeof value === "string" && value.length > 0);
-  const azureFileUrls = [...new Set(submittedFileUrls)];
+  const scanUrls = readUploadUrls(formData, "scanUrl");
+  const prescriptionUrls = readUploadUrls(formData, "prescriptionUrl");
 
-  if (azureFileUrls.length === 0 && scanFile instanceof File && scanFile.size > 0) {
-    azureFileUrls.push((await uploadFileToAzure(scanFile)).url);
+  if (scanUrls.length === 0 && prescriptionUrls.length === 0 && scanFile instanceof File && scanFile.size > 0) {
+    const check = validateUploadFile(scanFile);
+    if (!check.ok) throw new Error(check.error);
+    scanUrls.push((await storeUpload(scanFile)).url);
   }
 
+  // Without a clinician's prescription the patient must acknowledge the AI's limits.
+  const disclaimerAccepted = formData.get("aiDisclaimerAccepted") === "true";
+  if (prescriptionUrls.length === 0 && !disclaimerAccepted) {
+    throw new Error(
+      "Please confirm that you understand the limits of AI analysis without a prescription.",
+    );
+  }
+
+  const files = { scans: scanUrls, prescriptions: prescriptionUrls, uncategorized: [] };
   const report = await prisma.clinicalReport.create({
     data: {
       patientId: user.id,
       primarySymptoms: primarySymptoms.trim(),
-      fileUrls: azureFileUrls,
+      fileUrls: [...scanUrls, ...prescriptionUrls],
+      scanUrls,
+      prescriptionUrls,
+      aiDisclaimerAcceptedAt: prescriptionUrls.length === 0 ? new Date() : null,
       adaptiveData: {},
     },
   });
 
-  const triageResult = await generateTriageQuiz(primarySymptoms.trim(), azureFileUrls);
-  if (!triageResult.success) {
+  const triageResult = await generateTriageQuiz(primarySymptoms.trim(), files);
+  const screenedFlags = screenRedFlags(primarySymptoms);
+  if (!triageResult.success && screenedFlags.length === 0) {
     return triageResult;
+  }
+
+  const source = deriveConditionSource(files);
+  const assessment = triageResult.success ? triageResult.assessment : null;
+  const redFlags = [...new Set([...screenedFlags, ...(assessment?.redFlags ?? [])])];
+  const requiresInPersonCare = assessment?.manageableWithGuidedRehab === false || screenedFlags.length > 0;
+  const careReason =
+    assessment && !assessment.manageableWithGuidedRehab
+      ? assessment.safetyReasoning
+      : screenedFlags.length > 0
+        ? `Your description mentions warning signs (${screenedFlags.join("; ").toLowerCase()}) that always need an in-person medical evaluation before any exercise.`
+        : (assessment?.safetyReasoning ?? null);
+  const condition: DetectedCondition = {
+    title: assessment?.conditionTitle ?? "Warning signs that need in-person care",
+    summary:
+      assessment?.conditionSummary ??
+      "Your symptoms include warning signs that can point to a serious problem. These need to be examined in person before any exercise programme is started.",
+    source,
+    requiresInPersonCare,
+    careReason,
+  };
+  const escalatedAt = requiresInPersonCare ? new Date() : null;
+
+  await prisma.clinicalReport.update({
+    where: { id: report.id },
+    data: {
+      conditionTitle: condition.title,
+      conditionSummary: condition.summary,
+      conditionSource: source,
+      requiresInPersonCare,
+      careReason,
+      ...(escalatedAt
+        ? {
+            escalationKind: "triage",
+            escalationReason: careReason,
+            escalationEvidence: redFlags,
+            escalatedAt,
+          }
+        : {}),
+    },
+  });
+
+  // A case that needs in-person care gets no quiz and no exercise plan.
+  if (escalatedAt || !triageResult.success) {
+    revalidatePath("/workspace");
+    return {
+      success: true,
+      reportId: report.id,
+      quizId: null,
+      questions: [] as TriageQuestion[],
+      condition,
+      escalation: {
+        kind: "triage",
+        reason: careReason ?? "This case needs an in-person medical evaluation.",
+        evidence: redFlags,
+        escalatedAt: (escalatedAt ?? new Date()).toISOString(),
+      } satisfies Escalation,
+    } as const;
   }
 
   const triageQuiz = await prisma.triageQuiz.create({
@@ -128,7 +166,9 @@ export async function submitIntakeForm(formData: FormData) {
     reportId: report.id,
     quizId: triageQuiz.id,
     questions: triageResult.questions,
-  };
+    condition,
+    escalation: null,
+  } as const;
 }
 
 export async function completeTriageQuiz(
@@ -196,19 +236,63 @@ export async function completeTriageQuiz(
     ),
   );
 
+  const existingEscalation = toEscalation(quiz.clinicalReport);
+  if (existingEscalation) {
+    return { success: true, treatmentPlanId: null, routine: null, escalation: existingEscalation } as const;
+  }
+
+  // Red flags revealed by the answers lock the case before any plan is generated.
+  const answeredQuestions = answers.map(([questionId, answer]) => {
+    const question = questions.find(
+      (entry) => entry && typeof entry === "object" && "id" in entry && entry.id === questionId,
+    ) as { question?: unknown } | undefined;
+    return { question: typeof question?.question === "string" ? question.question : "", answer };
+  });
+  const answerFlags = screenQuizAnswers(answeredQuestions);
+  if (answerFlags.length > 0) {
+    const escalatedAt = new Date();
+    const reason = `Your answers point to warning signs (${answerFlags.join("; ").toLowerCase()}) that need an in-person medical evaluation before any exercise.`;
+    await prisma.clinicalReport.update({
+      where: { id: reportId },
+      data: {
+        requiresInPersonCare: true,
+        careReason: reason,
+        escalationKind: "triage",
+        escalationReason: reason,
+        escalationEvidence: answerFlags,
+        escalatedAt,
+      },
+    });
+    revalidatePath("/workspace");
+    return {
+      success: true,
+      treatmentPlanId: null,
+      routine: null,
+      escalation: {
+        kind: "triage",
+        reason,
+        evidence: answerFlags,
+        escalatedAt: escalatedAt.toISOString(),
+      } satisfies Escalation,
+    } as const;
+  }
+
   const routineResult = await generateFinalRoutine(
     quiz.clinicalReport.primarySymptoms,
-    quiz.clinicalReport.fileUrls,
+    reportFilesFromRecord(quiz.clinicalReport),
     Object.fromEntries(answers),
   );
   if (!routineResult.success) {
     return routineResult;
   }
 
+  // Validate and clamp every movement on the real body before saving.
+  const routine = await repairPlan(routineResult.routine);
+
   const treatmentPlan = await prisma.treatmentPlan.upsert({
     where: { clinicalReportId: reportId },
-    create: { clinicalReportId: reportId, routine: routineResult.routine },
-    update: { routine: routineResult.routine, createdAt: new Date() },
+    create: { clinicalReportId: reportId, routine },
+    update: { routine, createdAt: new Date() },
   });
 
   revalidatePath("/workspace");
@@ -216,51 +300,7 @@ export async function completeTriageQuiz(
   return {
     success: true,
     treatmentPlanId: treatmentPlan.id,
-    routine: routineResult.routine,
-  };
-}
-
-export async function reschedulePlanFromFeedback(
-  reportId: string,
-  feedback: "relief" | "same" | "issue",
-) {
-  const user = await getCurrentUser();
-  if (!user) {
-    throw new Error("You must be signed in to reschedule triage.");
-  }
-
-  const report = await prisma.clinicalReport.findFirst({
-    where: { id: reportId, patientId: user.id },
-    include: { treatmentPlan: true },
-  });
-
-  if (!report?.treatmentPlan) {
-    throw new Error("The active treatment plan could not be found.");
-  }
-
-  const currentPlan = report.treatmentPlan.routine as TreatmentPlan;
-  const scheduleResult = await rescheduleTreatmentPlan(
-    report.primarySymptoms,
-    currentPlan,
-    feedback,
-  );
-  if (!scheduleResult.success) {
-    return scheduleResult;
-  }
-
-  const updatedRoutine = {
-    ...currentPlan,
-    schedule: scheduleResult.schedule,
-  };
-  await prisma.treatmentPlan.update({
-    where: { id: report.treatmentPlan.id },
-    data: { routine: updatedRoutine, createdAt: new Date() },
-  });
-
-  revalidatePath("/workspace");
-
-  return {
-    success: true,
-    schedule: scheduleResult.schedule,
+    routine,
+    escalation: null,
   } as const;
 }

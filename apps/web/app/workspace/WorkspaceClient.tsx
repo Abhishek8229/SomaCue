@@ -1,15 +1,53 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { completeTriageQuiz, reschedulePlanFromFeedback } from "@/actions/intake";
-import type { TriageQuestion } from "@/actions/generatePlan";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { Volume2, VolumeX } from "lucide-react";
+import { completeTriageQuiz } from "@/actions/intake";
+import {
+  resetDailyProgress,
+  submitDailyFeedback,
+  toggleExerciseCompletion,
+} from "@/actions/dailyProgress";
+import { reportPainEvent, reschedulePainEvent } from "@/actions/painEvent";
+import { StageV2 } from "@/components/stage/StageV2";
+import { StopReportForm, type StopReportSubmission } from "@/components/stage/StopReportForm";
+import { useRepCelebration } from "@/components/stage/useRepCelebration";
+import { speechEnabled, useStageController } from "@/components/stage/useStageController";
+import { AnalysisProgress } from "@/components/workspace/AnalysisProgress";
+import { ConditionCard } from "@/components/workspace/ConditionCard";
+import { EscalationAlert } from "@/components/workspace/EscalationAlert";
+import { RehabChatDrawer } from "@/components/workspace/RehabChatDrawer";
+import { quickPrompts } from "@/lib/clinical/chatGuardrails";
+import { DailyPrescriptionPanel } from "@/components/workspace/DailyPrescriptionPanel";
+import { FeedbackModal } from "@/components/workspace/FeedbackModal";
+import { SetRepCounter } from "@/components/workspace/SetRepCounter";
+import { primeCelebrationAudio } from "@/lib/audio/celebrationSound";
+import {
+  buildSynthesisCopy,
+  buildTriageCopy,
+  type AnalysisCopy,
+  type IntakeSnapshot,
+} from "@/lib/analysis/progressCopy";
+import type { DetectedCondition, Escalation } from "@/lib/clinical/assessment";
+import { resolveStageExercise } from "@/lib/kinematics/exercise";
+import { repProgress } from "@/lib/kinematics/progress";
+import { REGIONS, type Region } from "@/lib/kinematics/vocabulary";
+import {
+  getDayExercises,
+  toDateKey,
+  type DailyProgressRecord,
+  type FeedbackSubmission,
+} from "@/lib/progress/dailyProgress";
+import type { PainContext } from "@/lib/progress/painEvent";
+import { usePrefersReducedMotion } from "@/lib/use-environment";
 import {
   QuizModal,
   SidebarIntake,
-  StagePanel,
   type FlowPhase,
   type InitialQuiz,
   type TreatmentPlanPayload,
+  type TriageReadyResult,
   type TreatmentScheduleDay,
 } from "./WorkspaceParts";
 
@@ -107,13 +145,43 @@ function getMonthKey(date: Date) {
   return `${date.getFullYear()}-${date.getMonth()}`;
 }
 
+/** Converts a calendar key ("year-monthIndex-day") into a Date at local midnight. */
+function parseCalendarKey(key: string) {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month, day);
+}
+
+const isRegion = (value: string): value is Region => (REGIONS as readonly string[]).includes(value);
+
+type PainFlow = {
+  /** the form is open */
+  open: boolean;
+  submitting: boolean;
+  error: string | null;
+  context: PainContext;
+  exercise: string | null;
+  regions: Region[];
+  eventId: string | null;
+  reschedule: "idle" | "pending" | "done" | "failed";
+};
+
 export default function WorkspacePage({
   hasActivePlan,
+  initialCondition = null,
+  initialEscalation = null,
+  initialIntake = null,
+  initialProgress = [],
   initialQuiz,
   reportId,
   routine,
+  userName,
 }: {
+  userName?: string;
   hasActivePlan: boolean;
+  initialCondition?: DetectedCondition | null;
+  initialEscalation?: Escalation | null;
+  initialIntake?: IntakeSnapshot | null;
+  initialProgress?: DailyProgressRecord[];
   initialQuiz: InitialQuiz | null;
   reportId: string | null;
   routine: TreatmentPlanPayload | null;
@@ -126,26 +194,38 @@ export default function WorkspacePage({
   const [selectedMonth, setSelectedMonth] = useState(
     `${currentMonth.getFullYear()}-${currentMonth.getMonth()}`,
   );
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [reportsSubmitted, setReportsSubmitted] = useState(
-    hasActivePlan || initialQuiz !== null,
+    hasActivePlan || initialQuiz !== null || initialEscalation !== null,
   );
-  const [hasUploadedReports, setHasUploadedReports] = useState(false);
+  const [condition, setCondition] = useState(initialCondition);
+  /** Locks the whole platform until the patient starts a new intake. */
+  const [escalation, setEscalation] = useState(initialEscalation);
+  const [arrivalMessage, setArrivalMessage] = useState<string | null>(null);
+  const [intakeSnapshot, setIntakeSnapshot] = useState(initialIntake);
+  const [analysisCopy, setAnalysisCopy] = useState<AnalysisCopy | null>(null);
+  /** Applies the AI result once the progress ring has reached 100%. */
+  const [pendingArrival, setPendingArrival] = useState<(() => void) | null>(null);
   const [planUnlocked, setPlanUnlocked] = useState(hasActivePlan);
   const [treatmentPlan, setTreatmentPlan] = useState(routine);
   const [triageQuiz, setTriageQuiz] = useState(initialQuiz);
   const [activeReportId, setActiveReportId] = useState(reportId);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [flowPhase, setFlowPhase] = useState<FlowPhase>(
-    hasActivePlan ? "ready" : initialQuiz ? "quiz" : "discovery",
+    hasActivePlan || initialEscalation ? "ready" : initialQuiz ? "quiz" : "discovery",
   );
   const [flowError, setFlowError] = useState<string | null>(null);
-  const [loaderIndex, setLoaderIndex] = useState(0);
-  const [patientFeedback, setPatientFeedback] = useState<"relief" | "same" | "issue" | null>(null);
-  const [feedbackPending, setFeedbackPending] = useState(false);
+  const [progressByDate, setProgressByDate] = useState<Record<string, DailyProgressRecord>>(
+    () => Object.fromEntries(initialProgress.map((record) => [record.dateKey, record])),
+  );
+  const [pendingExercise, setPendingExercise] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
+  const [painFlow, setPainFlow] = useState<PainFlow | null>(null);
 
   const journeyMonths = useMemo(
     () => createJourneyMonths(treatmentPlan),
@@ -206,6 +286,55 @@ export default function WorkspacePage({
       month: new Date().toLocaleString("en-US", { month: "long" }),
       year: new Date().getFullYear(),
     };
+  const selectedDateKey = selectedScheduleDay
+    ? toDateKey(parseCalendarKey(selectedScheduleDay.key))
+    : null;
+  const canRecordProgress = selectedDateKey !== null && selectedDateKey === toDateKey(new Date());
+  const selectedProgress = selectedDateKey ? progressByDate[selectedDateKey] : undefined;
+  const selectedExercises = useMemo(
+    () => (treatmentPlan ? getDayExercises(treatmentPlan, selectedScheduleDay) : []),
+    [treatmentPlan, selectedScheduleDay],
+  );
+  const stageExercises = useMemo(() => selectedExercises.map(resolveStageExercise), [selectedExercises]);
+  const todayKey = toDateKey(new Date());
+  const todayProgress = progressByDate[todayKey];
+  const stoppedToday = todayProgress?.stopped === true;
+  const stage = useStageController(stageExercises.length, stoppedToday);
+  const stageKey = `${selectedCareDay.key}|${stageExercises.map((exercise) => exercise.name).join("|")}`;
+  const [loadedStageKey, setLoadedStageKey] = useState(stageKey);
+  if (loadedStageKey !== stageKey) {
+    // A different day or plan: start again from the first exercise.
+    setLoadedStageKey(stageKey);
+    stage.dispatch({ type: "load", count: stageExercises.length });
+  }
+  const sessionStopped = stage.state.stopped || stoppedToday;
+  const stageState = sessionStopped === stage.state.stopped ? stage.state : { ...stage.state, stopped: sessionStopped };
+  const currentStageExercise = stageExercises[stage.state.index] ?? null;
+  const currentSpec = currentStageExercise?.spec ?? null;
+  const reducedMotion = usePrefersReducedMotion();
+  const { celebration } = useRepCelebration({
+    spec: currentSpec,
+    hud: stage.state.hud,
+    playing: stage.state.playing,
+    stopped: sessionStopped,
+    resetKey: `${stage.state.index}-${stage.state.restartKey}`,
+  });
+  const voiceActive = speechEnabled(stage.state);
+  const realtimePace = stage.state.pace === "realtime";
+  const painRegions = useMemo<Region[]>(
+    () => painFlow?.regions ?? (todayProgress?.stopRegions ?? []).filter(isRegion),
+    [painFlow, todayProgress],
+  );
+  const flaggedRegions = useMemo(() => {
+    // Regions from stop reports on earlier days, shown as calm amber rings.
+    const regions = new Set<Region>();
+    for (const record of Object.values(progressByDate)) {
+      if (record.dateKey === todayKey || !record.stopped) continue;
+      for (const region of record.stopRegions ?? []) if (isRegion(region)) regions.add(region);
+    }
+    return [...regions];
+  }, [progressByDate, todayKey]);
+  const stageGlow = useMemo(() => ({ pain: painRegions, flagged: flaggedRegions }), [painRegions, flaggedRegions]);
   const syncCalendarMonth = (nextMonth: Date) => {
     setScheduleNotice(null);
     setCalendarMonth(nextMonth);
@@ -221,106 +350,285 @@ export default function WorkspacePage({
   const isFlowLocked =
     flowPhase === "preparing" || flowPhase === "quiz" || flowPhase === "finalizing";
 
-  const loadingMessages =
-    flowPhase === "preparing"
-      ? hasUploadedReports
-        ? [
-            "Extracting clinical notes from uploaded documents...",
-            "Analyzing visual medical reports...",
-            "Cross-referencing musculoskeletal constraints...",
-            "Formulating targeted diagnostic questions...",
-          ]
-        : [
-            "Evaluating symptom descriptions...",
-            "Cross-referencing musculoskeletal databases...",
-            "Mapping relevant safety considerations...",
-            "Formulating targeted diagnostic questions...",
-          ]
-      : [
-          "Synthesizing diagnostic feedback...",
-          "Calculating safe range-of-motion limits...",
-          "Mapping movement cues to the 3D anatomical stage...",
-          "Building a gentle progression for today...",
-        ];
-
-  useEffect(() => {
-    if (!isFlowLocked || flowPhase === "quiz") {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      setLoaderIndex((index) => (index + 1) % loadingMessages.length);
-    }, 2000);
-
-    return () => window.clearInterval(timer);
-  }, [flowPhase, isFlowLocked, loadingMessages.length]);
-
   const activeJourneyMonthKey = journeyMonths.some((month) => month.key === selectedMonth)
     ? selectedMonth
     : journeyMonths[0]?.key;
 
-  const handlePreparing = (hasFiles: boolean) => {
-    setHasUploadedReports(hasFiles);
+  const handlePreparing = (intake: IntakeSnapshot) => {
+    setIntakeSnapshot(intake);
+    setAnalysisCopy(buildTriageCopy(intake));
+    setPendingArrival(null);
+    setArrivalMessage(null);
     setFlowError(null);
-    setLoaderIndex(0);
     setFlowPhase("preparing");
   };
 
-  const handleTriageReady = (result: {
-    reportId: string;
-    quizId: string;
-    questions: TriageQuestion[];
-  }) => {
-    setTriageQuiz({
-      id: result.quizId,
-      reportId: result.reportId,
-      questions: result.questions,
+  const handleTriageReady = (result: TriageReadyResult) => {
+    const quizId = result.quizId;
+    setArrivalMessage(result.escalation || !quizId ? "Your assessment is ready." : null);
+    setPendingArrival(() => () => {
+      setCondition(result.condition);
+      setActiveReportId(result.reportId);
+      setReportsSubmitted(true);
+      if (result.escalation || !quizId) {
+        setPlanUnlocked(false);
+        setFlowPhase("ready");
+        if (result.escalation) setEscalation(result.escalation);
+        return;
+      }
+      setTriageQuiz({
+        id: quizId,
+        reportId: result.reportId,
+        questions: result.questions,
+      });
+      setActiveReportId(result.reportId);
+      setQuizAnswers({});
+      setReportsSubmitted(true);
+      setPlanUnlocked(false);
+      setFlowPhase("quiz");
     });
-    setActiveReportId(result.reportId);
-    setQuizAnswers({});
-    setReportsSubmitted(true);
-    setPlanUnlocked(false);
-    setFlowPhase("quiz");
+  };
+
+  const handleAnalysisComplete = () => {
+    pendingArrival?.();
+    setPendingArrival(null);
   };
 
   const handleRerunAnalysis = () => {
+    setEscalation(null);
+    setCondition(null);
     setReportsSubmitted(false);
-    setHasUploadedReports(false);
     setPlanUnlocked(false);
     setTreatmentPlan(null);
     setTriageQuiz(null);
     setActiveReportId(null);
     setQuizAnswers({});
+    setProgressByDate({});
+    setIsFeedbackOpen(false);
+    setPainFlow(null);
+    stage.dispatch({ type: "resume" });
     setFlowError(null);
     setFlowPhase("discovery");
   };
 
-  const handleFeedback = async (feedback: "relief" | "same" | "issue") => {
-    setPatientFeedback(feedback);
-    setFeedbackError(null);
-    if (!activeReportId || !treatmentPlan) {
+  const updateProgress = (dateKey: string, patch: Partial<DailyProgressRecord>) =>
+    setProgressByDate((current) => {
+      const base: DailyProgressRecord = current[dateKey] ?? {
+        dateKey,
+        completedExercises: [],
+        completed: false,
+        feedback: null,
+      };
+      return { ...current, [dateKey]: { ...base, ...patch } };
+    });
+
+  const handleToggleExercise = async (exerciseName: string, checked: boolean) => {
+    if (!activeReportId || !selectedDateKey) {
       return;
     }
 
-    setFeedbackPending(true);
+    const dateKey = selectedDateKey;
+    const previous = progressByDate[dateKey]?.completedExercises ?? [];
+    setProgressError(null);
+    setPendingExercise(exerciseName);
+    updateProgress(dateKey, {
+      completedExercises: checked
+        ? [...new Set([...previous, exerciseName])]
+        : previous.filter((name) => name !== exerciseName),
+    });
+
     try {
-      const result = await reschedulePlanFromFeedback(activeReportId, feedback);
-      if (!("error" in result)) {
-        setTreatmentPlan((currentPlan) =>
-          currentPlan ? { ...currentPlan, schedule: result.schedule } : currentPlan,
-        );
-        setSelectedDayOffset(0);
+      const result = await toggleExerciseCompletion(
+        activeReportId,
+        dateKey,
+        exerciseName,
+        checked,
+      );
+      if (result.success) {
+        updateProgress(dateKey, { completedExercises: result.completedExercises });
       } else {
-        setFeedbackError(
-          result.error === "AI_PROVIDER_TIMEOUT"
-            ? "The schedule update timed out. Please try again."
-            : "The schedule could not be updated. Please try again.",
-        );
+        updateProgress(dateKey, { completedExercises: previous });
+        setProgressError(result.error);
       }
-    } catch (error) {
-      setFeedbackError(error instanceof Error ? error.message : "Unable to update the schedule.");
+    } catch {
+      updateProgress(dateKey, { completedExercises: previous });
+      setProgressError("Your progress could not be saved. Please try again.");
     } finally {
-      setFeedbackPending(false);
+      setPendingExercise(null);
+    }
+  };
+
+  const handleResetDay = async () => {
+    if (!activeReportId || !selectedDateKey) {
+      return;
+    }
+
+    const dateKey = selectedDateKey;
+    setProgressError(null);
+    setIsResetting(true);
+    try {
+      const result = await resetDailyProgress(activeReportId, dateKey);
+      if (result.success) {
+        updateProgress(dateKey, {
+          completedExercises: [],
+          completed: false,
+          feedback: null,
+          stopped: false,
+          stopRegions: [],
+        });
+        setFeedbackError(null);
+        if (dateKey === todayKey) {
+          setPainFlow(null);
+          stage.dispatch({ type: "resume" });
+        }
+        if (result.schedule !== undefined) {
+          const restoredSchedule = result.schedule ?? undefined;
+          setTreatmentPlan((plan) => (plan ? { ...plan, schedule: restoredSchedule } : plan));
+        }
+      } else {
+        setProgressError(result.error);
+      }
+    } catch {
+      setProgressError("Today's progress could not be reset. Please try again.");
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const openFeedback = () => {
+    setFeedbackError(null);
+    setIsFeedbackOpen(true);
+  };
+
+  /** The case is beyond online rehab: stop everything and show the lockout. */
+  const lockForInPersonCare = (next: Escalation) => {
+    stage.dispatch({ type: "pause" });
+    setIsFeedbackOpen(false);
+    setPainFlow((flow) => (flow ? { ...flow, open: false, submitting: false } : flow));
+    setEscalation(next);
+  };
+
+  /** Red-flag stop: abort immediately, rest the figure, glow the area, open the report. */
+  const handlePainOverride = () => {
+    const exercise = currentStageExercise;
+    const hud = stage.state.hud;
+    stage.dispatch({ type: "stop" });
+    setIsFeedbackOpen(false);
+    setPainFlow({
+      open: true,
+      submitting: false,
+      error: null,
+      exercise: exercise?.name ?? null,
+      regions: exercise?.spec?.targetRegions ?? [],
+      eventId: null,
+      reschedule: "idle",
+      context: {
+        exerciseName: exercise?.name ?? null,
+        rep: hud?.rep ?? null,
+        set: hud?.set ?? null,
+        phase: hud?.phase ?? null,
+        elapsedSeconds: hud ? Math.round(hud.elapsed * 10) / 10 : null,
+      },
+    });
+  };
+
+  const runPainReschedule = async (eventId: string) => {
+    if (!activeReportId) return;
+    setPainFlow((flow) => (flow ? { ...flow, reschedule: "pending" } : flow));
+    try {
+      const result = await reschedulePainEvent(activeReportId, eventId);
+      if (result.success) {
+        setTreatmentPlan((plan) => (plan ? { ...plan, schedule: result.schedule } : plan));
+        setPainFlow((flow) => (flow ? { ...flow, reschedule: "done" } : flow));
+      } else {
+        setPainFlow((flow) => (flow ? { ...flow, reschedule: "failed" } : flow));
+      }
+    } catch {
+      setPainFlow((flow) => (flow ? { ...flow, reschedule: "failed" } : flow));
+    }
+  };
+
+  const handleSubmitStopReport = async (submission: StopReportSubmission) => {
+    if (!painFlow) return;
+    if (!activeReportId) {
+      setPainFlow({ ...painFlow, error: "Your plan could not be found. Reload the page and try again." });
+      return;
+    }
+    setPainFlow({ ...painFlow, submitting: true, error: null });
+    try {
+      const result = await reportPainEvent(activeReportId, todayKey, {
+        ...submission,
+        context: painFlow.context,
+      });
+      if (!result.success) {
+        setPainFlow((flow) => (flow ? { ...flow, submitting: false, error: result.error } : flow));
+        return;
+      }
+      updateProgress(todayKey, { stopped: true, stopRegions: submission.regions });
+      setPainFlow((flow) =>
+        flow
+          ? { ...flow, open: false, submitting: false, regions: submission.regions, eventId: result.eventId }
+          : flow,
+      );
+      if (result.escalation) {
+        lockForInPersonCare(result.escalation);
+        return;
+      }
+      void runPainReschedule(result.eventId);
+    } catch {
+      setPainFlow((flow) =>
+        flow ? { ...flow, submitting: false, error: "Your report could not be saved. Please try again." } : flow,
+      );
+    }
+  };
+
+  const stopMessage = !sessionStopped
+    ? null
+    : painFlow?.reschedule === "pending"
+      ? "Report saved. Updating your plan to avoid this movement…"
+      : painFlow?.reschedule === "done"
+        ? "Report saved. Your plan from tomorrow avoids this movement."
+        : painFlow?.reschedule === "failed"
+          ? "Report saved, but the plan could not be updated yet."
+          : stoppedToday
+            ? "Report saved."
+            : "Tell us what happened so your plan can change.";
+
+  const handleSubmitFeedback = async (submission: FeedbackSubmission) => {
+    if (!activeReportId || !selectedDateKey) {
+      return;
+    }
+
+    const dateKey = selectedDateKey;
+    setFeedbackError(null);
+    setFeedbackSubmitting(true);
+    try {
+      const result = await submitDailyFeedback(activeReportId, dateKey, submission);
+      if (!result.success) {
+        setFeedbackError(result.error);
+        return;
+      }
+
+      // The day is saved as completed even when the schedule update fails.
+      updateProgress(dateKey, { completed: true, feedback: submission.feedback });
+      if (!result.rescheduled && result.escalation) {
+        lockForInPersonCare(result.escalation);
+      } else if (result.rescheduled) {
+        setTreatmentPlan((plan) => (plan ? { ...plan, schedule: result.schedule } : plan));
+        setIsFeedbackOpen(false);
+      } else if (result.rescheduleError) {
+        setFeedbackError(
+          result.rescheduleError === "AI_PROVIDER_TIMEOUT"
+            ? "Your feedback was saved, but the schedule update timed out. Try again."
+            : "Your feedback was saved, but the schedule could not be updated. Try again.",
+        );
+      } else {
+        setIsFeedbackOpen(false);
+      }
+    } catch {
+      setFeedbackError("Your feedback could not be saved. Please try again.");
+    } finally {
+      setFeedbackSubmitting(false);
     }
   };
 
@@ -330,7 +638,18 @@ export default function WorkspacePage({
     }
 
     setFlowError(null);
-    setLoaderIndex(0);
+    setAnalysisCopy(
+      buildSynthesisCopy(
+        intakeSnapshot,
+        triageQuiz.questions.map((question) => ({
+          question: question.question,
+          answer: quizAnswers[question.id] ?? "",
+          multipleChoice: question.answerType === "multiple_choice",
+        })),
+      ),
+    );
+    setPendingArrival(null);
+    setArrivalMessage(null);
     setFlowPhase("finalizing");
 
     try {
@@ -340,14 +659,24 @@ export default function WorkspacePage({
         quizAnswers,
       );
       if (!("error" in result)) {
-        setTreatmentPlan(result.routine);
-        setPlanUnlocked(true);
-        setFlowPhase("ready");
+        const { escalation: found, routine: plan } = result;
+        setArrivalMessage(found ? "Your assessment is ready." : null);
+        setPendingArrival(() => () => {
+          if (found || !plan) {
+            setPlanUnlocked(false);
+            setFlowPhase("ready");
+            if (found) setEscalation(found);
+            return;
+          }
+          setTreatmentPlan(plan);
+          setPlanUnlocked(true);
+          setFlowPhase("ready");
+        });
       } else {
         setFlowPhase("quiz");
         setFlowError(
           result.error === "AI_PROVIDER_TIMEOUT"
-            ? "The AI provider timed out after 60 seconds. Please try again."
+            ? "The AI provider timed out. Please try again."
             : "The AI provider is unavailable. Please try again later.",
         );
       }
@@ -357,6 +686,14 @@ export default function WorkspacePage({
     }
   };
 
+  const chatPrompts = quickPrompts({
+    hasCondition: condition !== null,
+    hasPlan: planUnlocked && treatmentPlan !== null,
+    exerciseCount: getDayExercises(treatmentPlan ?? { steps: [] }, rollingDays.find((day) => day.dayOffset === 0)).length,
+    escalated: escalation !== null,
+    stoppedToday,
+  });
+
   const quizComplete =
     triageQuiz !== null &&
     triageQuiz.questions.every((question) => (quizAnswers[question.id] ?? "").trim().length > 0);
@@ -364,7 +701,7 @@ export default function WorkspacePage({
   return (
     <main
       aria-busy={isFlowLocked}
-      className="workspace-shell relative flex h-screen flex-col overflow-hidden bg-zinc-950 text-white"
+      className="workspace-shell relative flex h-[calc(100dvh-var(--nav-h))] flex-col overflow-hidden bg-zinc-950 text-white"
     >
       <header className="workspace-header flex h-16 shrink-0 items-center justify-between border-b border-white/15 bg-zinc-900 px-5">
         <div className="flex min-w-[220px] items-center gap-3">
@@ -373,7 +710,9 @@ export default function WorkspacePage({
           </div>
           <div>
             <p className="text-sm font-semibold tracking-tight">SomaCue</p>
-            <p className="text-[10px] text-white/60">Clinical workspace / Jordan Lee</p>
+            <p className="max-w-[180px] truncate text-[10px] text-white/60">
+              Rehab Studio{userName ? ` / ${userName}` : ""}
+            </p>
           </div>
         </div>
 
@@ -418,9 +757,9 @@ export default function WorkspacePage({
               {formatPlanDuration(treatmentPlan.durationMonths)} plan
             </span>
           ) : null}
-          <button className={`${interactive} text-[11px] text-white/65 hover:text-white`} type="button">
+          <Link className={`${interactive} text-[11px] text-white/65 hover:text-white`} href="/dashboard#history">
             Patient History
-          </button>
+          </Link>
           <span className="hidden items-center gap-2 text-[10px] text-emerald-300 sm:flex">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
             Progress Saved
@@ -441,13 +780,21 @@ export default function WorkspacePage({
             onRerunAnalysis={handleRerunAnalysis}
             onTriageReady={handleTriageReady}
             reportsSubmitted={reportsSubmitted}
+            summary={condition ? <ConditionCard condition={condition} escalation={escalation} /> : null}
           />
+          {!isFlowLocked ? (
+            <RehabChatDrawer key={activeReportId ?? "no-report"} quickPrompts={chatPrompts} reportId={activeReportId} />
+          ) : null}
         </div>
 
-        <StagePanel
+        <StageV2
+          dayLabel={`${selectedCareDay.day} ${selectedCareDay.date}`.trim()}
+          dispatch={stage.dispatch}
+          exercises={stageExercises}
+          glow={stageGlow}
           planUnlocked={planUnlocked}
           reportsSubmitted={reportsSubmitted}
-          selectedCareDay={selectedCareDay}
+          state={stageState}
         />
 
         {planUnlocked ? (
@@ -510,6 +857,8 @@ export default function WorkspacePage({
                     );
                     const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
                     const careDay = rollingDays.find((item) => item.key === dateKey);
+                    const isDayDone = progressByDate[toDateKey(date)]?.completed === true;
+                    const isDayStopped = progressByDate[toDateKey(date)]?.stopped === true;
                     const isSelected = selectedCareDay.key === dateKey;
                     const isToday =
                       date.toDateString() === new Date().toDateString();
@@ -518,8 +867,8 @@ export default function WorkspacePage({
 
                     return (
                       <button
-                        aria-label={`${calendarMonthLabel} ${day}`}
-                        className={`${interactive} mx-auto grid h-7 w-7 place-items-center rounded-md text-[11px] ${
+                        aria-label={`${calendarMonthLabel} ${day}${isDayStopped ? ", session stopped" : isDayDone ? ", session completed" : ""}`}
+                        className={`${interactive} relative mx-auto grid h-7 w-7 place-items-center rounded-md text-[11px] ${
                           isBeforeScheduleStart
                             ? "cursor-not-allowed text-white/20 blur-[1px]"
                             : isSelected
@@ -556,6 +905,11 @@ export default function WorkspacePage({
                         type="button"
                       >
                         {day}
+                        {isDayStopped ? (
+                          <span aria-hidden="true" className="workspace-calendar-stopped" />
+                        ) : isDayDone ? (
+                          <span aria-hidden="true" className="workspace-calendar-done" />
+                        ) : null}
                       </button>
                     );
                   })}
@@ -590,79 +944,34 @@ export default function WorkspacePage({
                 </p>
               </section>
             ) : (
-              <>
-            <section className="workspace-panel rounded-2xl border border-white/15 bg-zinc-900 p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="mb-1 text-[9px] font-medium text-emerald-300">02 / daily prescription</p>
-                  <h2 className="text-base font-medium tracking-tight">
-                    {selectedCareDay.status === "rest" ? "Recovery day" : `${selectedCareDay.day}'s plan`}
-                  </h2>
-                </div>
-                <span className="rounded-full bg-emerald-300/10 px-2 py-1 text-[10px] text-emerald-200">
-                  {selectedCareDay.focus}
-                </span>
-              </div>
-              <p className="mt-2 text-[10px] leading-relaxed text-white/55">{selectedCareDay.tagline}</p>
-              <div className="mt-4 flex flex-col gap-2">
-                {treatmentPlan?.steps.map((step, index) => (
-                  <button
-                    className={`${interactive} flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-left hover:border-emerald-300/50 hover:bg-white/10`}
-                    key={`${step.animationTriggerId}-${index}`}
-                    type="button"
-                  >
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-300/15 font-mono text-[9px] text-emerald-300">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <strong className="block truncate text-[11px] font-medium text-white/90">{step.exerciseName}</strong>
-                      <small className="mt-1 block text-[10px] text-white/60">{step.durationSeconds}s guided movement</small>
-                      <span className="mt-2 block text-[10px] leading-relaxed text-emerald-100/70">“{step.voiceCue}”</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="workspace-panel workspace-live min-h-0 flex-1 rounded-2xl border border-white/15 bg-zinc-900 p-4 font-mono">
-              <p className="mb-1 text-[9px] text-emerald-300">Live dictation</p>
-              <h2 className="font-sans text-base font-medium tracking-tight">Movement cues</h2>
-              <div className="mt-6 space-y-4 text-[10px] leading-relaxed text-white/65">
-                <p><span className="mr-3 text-white/30">00:12</span>▶ Bend your knee slowly…</p>
-                <p><span className="mr-3 text-white/30">00:08</span>Keep the heel connected to the floor.</p>
-                <p className="text-white/35"><span className="mr-3">00:03</span>Pause at the comfortable limit.</p>
-              </div>
-              <div className="mt-7 border-t border-white/10 pt-4 font-sans">
-                <p className="text-xs font-medium text-white/85">How did your body feel after this?</p>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {[
-                    ["relief", "More relief"],
-                    ["same", "About the same"],
-                    ["issue", "More discomfort"],
-                  ].map(([value, label]) => (
-                    <button
-                      className={`${interactive} rounded-lg border px-2 py-2 text-[10px] ${
-                        patientFeedback === value
-                          ? value === "issue"
-                            ? "border-red-300/70 bg-red-300/15 text-red-100"
-                            : "border-emerald-300/70 bg-emerald-300/15 text-emerald-100"
-                          : "border-white/10 bg-white/5 text-white/60 hover:border-white/25 hover:text-white"
-                      }`}
-                      key={value}
-                      disabled={feedbackPending}
-                      onClick={() => handleFeedback(value as "relief" | "same" | "issue")}
-                      type="button"
-                    >
-                      {feedbackPending && patientFeedback === value ? "Updating…" : label}
-                    </button>
-                  ))}
-                </div>
-                {feedbackError ? (
-                  <p className="mt-2 text-[10px] text-red-200">{feedbackError}</p>
-                ) : null}
-              </div>
-            </section>
-              </>
+            <DailyPrescriptionPanel
+              canInteract={canRecordProgress}
+              completedExercises={selectedProgress?.completedExercises ?? []}
+              dayLabel={selectedCareDay.day}
+              errorMessage={progressError}
+              focus={selectedCareDay.focus}
+              isDayCompleted={selectedProgress?.completed ?? false}
+              isResetting={isResetting}
+              isStopped={canRecordProgress && sessionStopped}
+              onDone={openFeedback}
+              onReportStop={
+                canRecordProgress && sessionStopped && !stoppedToday && painFlow && !painFlow.open
+                  ? () => setPainFlow((flow) => (flow ? { ...flow, open: true, error: null } : flow))
+                  : painFlow?.reschedule === "failed" && painFlow.eventId
+                    ? () => void runPainReschedule(painFlow.eventId as string)
+                    : null
+              }
+              onReset={handleResetDay}
+              stopActionLabel={
+                painFlow?.reschedule === "failed" ? "Try updating the plan again" : "Report what happened"
+              }
+              stopMessage={canRecordProgress ? stopMessage : null}
+              onToggleExercise={handleToggleExercise}
+              pendingExercise={pendingExercise}
+              status={selectedCareDay.status}
+              steps={selectedExercises}
+              tagline={selectedCareDay.tagline}
+            />
             )}
           </div>
         ) : null}
@@ -681,50 +990,181 @@ export default function WorkspacePage({
               quizAnswers={quizAnswers}
               triageQuiz={triageQuiz}
             />
-          ) : (
-            <section aria-live="polite" className="w-full max-w-md rounded-3xl border border-emerald-200/20 bg-zinc-900 p-8 text-center">
-              <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-emerald-300/40 bg-emerald-300/10 text-xl text-emerald-200">
-                ✦
-              </div>
-              <p className="mt-6 text-[10px] font-medium text-emerald-300">
-                {flowPhase === "preparing" ? "Diagnostic triage" : "Treatment synthesis"}
-              </p>
-              <h2 className="mt-2 text-xl font-medium tracking-tight">{loadingMessages[loaderIndex]}</h2>
-              <div className="mt-6 flex justify-center gap-1.5">
-                {loadingMessages.map((message, index) => (
-                  <span className={`h-1.5 rounded-full transition-colors duration-150 ${index === loaderIndex ? "w-8 bg-emerald-300" : "w-1.5 bg-white/20"}`} key={message} />
-                ))}
-              </div>
-            </section>
-          )}
+          ) : analysisCopy ? (
+            <AnalysisProgress
+              arrived={pendingArrival !== null}
+              copy={analysisCopy}
+              doneMessage={
+                arrivalMessage ??
+                (flowPhase === "preparing"
+                  ? "Your follow-up questions are ready."
+                  : "Your treatment plan is ready.")
+              }
+              eyebrow={flowPhase === "preparing" ? "Diagnostic triage" : "Treatment synthesis"}
+              footnote={
+                flowPhase === "preparing"
+                  ? "Your follow-up questions will open here as soon as they are ready."
+                  : "Your plan will open here as soon as it is ready."
+              }
+              key={flowPhase}
+              onComplete={handleAnalysisComplete}
+              timeConstant={flowPhase === "preparing" ? 30 : 38}
+            />
+          ) : null}
         </div>
+      ) : null}
+
+      {escalation && !isFlowLocked ? (
+        <EscalationAlert condition={condition} escalation={escalation} onStartNewIntake={handleRerunAnalysis} />
+      ) : null}
+
+      {isFeedbackOpen ? (
+        <FeedbackModal
+          errorMessage={feedbackError}
+          exercises={selectedExercises.map((step) => step.exerciseName)}
+          isSubmitting={feedbackSubmitting}
+          onClose={() => setIsFeedbackOpen(false)}
+          onSubmit={handleSubmitFeedback}
+        />
+      ) : null}
+
+      {painFlow?.open ? (
+        <StopReportForm
+          errorMessage={painFlow.error}
+          exercises={stageExercises.map((exercise) => exercise.name)}
+          initialExercise={painFlow.exercise}
+          initialRegions={painFlow.regions}
+          isSubmitting={painFlow.submitting}
+          onClose={() => setPainFlow((flow) => (flow ? { ...flow, open: false } : flow))}
+          onSubmit={handleSubmitStopReport}
+        />
       ) : null}
 
       <footer className="flex h-20 shrink-0 items-center justify-between border-t border-white/15 bg-zinc-900 px-5">
         <div className="min-w-[220px]">
-          <p className="text-[10px] text-emerald-300">Session 04</p>
-          <p className="mt-1 text-xs text-white/80">Set 2 of 3 <span className="text-white/35">•</span> 12 Reps</p>
+          <p className={`text-[10px] ${sessionStopped ? "text-red-300" : "text-emerald-300"}`}>
+            {sessionStopped
+              ? "Session stopped"
+              : stageExercises.length
+                ? `Exercise ${stage.state.index + 1} of ${stageExercises.length}`
+                : "No session today"}
+          </p>
+          {currentSpec ? (
+            <SetRepCounter
+              celebration={celebration}
+              progress={repProgress(currentSpec, stage.state.hud)}
+              reducedMotion={reducedMotion}
+              reps={currentSpec.reps}
+              sets={currentSpec.sets}
+            />
+          ) : (
+            <p className="mt-1 text-xs text-white/80">{currentStageExercise?.name ?? "Rest and recover"}</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <button className={`${interactive} rounded-lg px-2 py-1 text-[10px] text-white/65 hover:bg-white/10 hover:text-white`} type="button">Prev</button>
-          <button aria-label={isPlaying ? "Pause playback" : "Play playback"} className={`${interactive} grid h-10 w-10 place-items-center rounded-full bg-emerald-300 text-black`} onClick={() => setIsPlaying((value) => !value)} type="button">
-            {isPlaying ? "Pause" : "Play"}
+          <button
+            className={`${interactive} rounded-lg px-2 py-1 text-[10px] text-white/65 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35`}
+            disabled={!planUnlocked || sessionStopped || stage.state.index === 0}
+            onClick={() => stage.dispatch({ type: "prev" })}
+            type="button"
+          >
+            Prev
           </button>
-          <button className={`${interactive} rounded-lg px-2 py-1 text-[10px] text-white/65 hover:bg-white/10 hover:text-white`} type="button">Next</button>
-          <div className="ml-3 flex rounded-lg border border-white/10 bg-black/25 p-1">
-            <button className={`${interactive} rounded px-2 py-1 font-mono text-[9px] text-white/45 hover:text-white`} type="button">0.5x</button>
-            <button className={`${interactive} rounded bg-white/10 px-2 py-1 font-mono text-[9px] text-white`} type="button">1.0x</button>
+          <button
+            aria-label={stage.state.playing ? "Pause playback" : "Play playback"}
+            className={`${interactive} grid h-10 w-10 place-items-center rounded-full bg-emerald-300 text-[10px] font-semibold text-black disabled:cursor-not-allowed disabled:opacity-35`}
+            disabled={!planUnlocked || sessionStopped || !currentStageExercise?.spec}
+            onClick={() => {
+              primeCelebrationAudio();
+              stage.dispatch({ type: "toggle" });
+            }}
+            type="button"
+          >
+            {stage.state.playing ? "Pause" : "Play"}
+          </button>
+          <button
+            className={`${interactive} rounded-lg px-2 py-1 text-[10px] text-white/65 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35`}
+            disabled={!planUnlocked || sessionStopped || stage.state.index >= stageExercises.length - 1}
+            onClick={() => stage.dispatch({ type: "next" })}
+            type="button"
+          >
+            Next
+          </button>
+          <div aria-label="Playback speed" className="ml-3 flex rounded-lg border border-white/10 bg-black/25 p-1" role="group">
+            {([0.5, 1] as const).map((speed) => (
+              <button
+                aria-pressed={stage.state.speed === speed}
+                className={`${interactive} rounded px-2 py-1 font-mono text-[9px] ${
+                  stage.state.speed === speed ? "bg-white/10 text-white" : "text-white/45 hover:text-white"
+                }`}
+                key={speed}
+                onClick={() => stage.dispatch({ type: "speed", speed })}
+                type="button"
+              >
+                {speed === 1 ? "1.0x" : "0.5x"}
+              </button>
+            ))}
           </div>
+          <div aria-label="Pace" className="ml-3 flex rounded-lg border border-white/10 bg-black/25 p-1" role="group">
+            {(
+              [
+                ["guided", "Guided", "Waits for each spoken instruction before moving"],
+                ["realtime", "Real-time", "Moves continuously with no spoken instructions"],
+              ] as const
+            ).map(([pace, label, hint]) => (
+              <button
+                aria-pressed={stage.state.pace === pace}
+                className={`${interactive} rounded px-2 py-1 text-[9px] ${
+                  stage.state.pace === pace ? "bg-emerald-300/15 text-emerald-100" : "text-white/45 hover:text-white"
+                }`}
+                key={pace}
+                onClick={() => stage.dispatch({ type: "pace", pace })}
+                title={hint}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            aria-label={
+              realtimePace
+                ? "Spoken instructions are off in Real-time pace"
+                : voiceActive
+                  ? "Mute spoken instructions"
+                  : "Turn on spoken instructions"
+            }
+            aria-pressed={voiceActive}
+            className={`${interactive} grid h-8 w-8 place-items-center rounded-lg border disabled:cursor-not-allowed disabled:opacity-35 ${
+              voiceActive
+                ? "border-emerald-300/40 text-emerald-200 hover:bg-emerald-300/10"
+                : "border-white/15 text-white/45 hover:text-white"
+            }`}
+            disabled={realtimePace}
+            onClick={() => stage.dispatch({ type: "voice", on: !stage.state.voiceOn })}
+            title={realtimePace ? "Spoken instructions are off in Real-time pace" : voiceActive ? "Voice on" : "Voice muted"}
+            type="button"
+          >
+            {voiceActive ? <Volume2 aria-hidden="true" size={14} /> : <VolumeX aria-hidden="true" size={14} />}
+          </button>
           <button className={`${interactive} ml-3 flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-[10px] text-white/65 hover:border-emerald-300/50 hover:text-emerald-300`} onClick={() => setIsListening((value) => !value)} type="button">
             <span className={isListening ? "text-emerald-300" : "text-white/55"}>●</span>
             {isListening ? "Listening" : "Voice feedback"}
           </button>
         </div>
-        <button className={`${interactive} flex min-w-[155px] items-center gap-3 whitespace-nowrap rounded-xl border border-red-400/60 bg-red-400/10 px-3 py-2 text-left text-red-100 hover:bg-red-400/20`} type="button">
+        <button
+          aria-describedby="pain-override-hint"
+          className={`${interactive} flex min-w-[155px] items-center gap-3 whitespace-nowrap rounded-xl border border-red-400/60 bg-red-400/10 px-3 py-2 text-left text-red-100 hover:bg-red-400/20 disabled:cursor-not-allowed disabled:opacity-50`}
+          disabled={!planUnlocked || sessionStopped}
+          onClick={handlePainOverride}
+          type="button"
+        >
           <span className="grid h-7 w-7 place-items-center rounded-lg border border-red-400/70 font-mono text-sm text-red-400">!</span>
           <span className="flex flex-col whitespace-nowrap">
-            <strong className="text-[10px]">Pain Override</strong>
-            <small className="mt-0.5 text-[8px] text-red-200/70">Halt session</small>
+            <strong className="text-[10px]">{sessionStopped ? "Session stopped" : "Pain Override"}</strong>
+            <small className="mt-0.5 text-[8px] text-red-200/70" id="pain-override-hint">
+              {sessionStopped ? "Reset the day to continue" : "Sharp pain or sudden loss of movement"}
+            </small>
           </span>
         </button>
       </footer>

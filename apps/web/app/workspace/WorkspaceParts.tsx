@@ -10,15 +10,21 @@ import {
 } from "react";
 import { Mic, MicOff } from "lucide-react";
 import Image from "next/image";
-import { submitIntakeForm, uploadScanFile } from "@/actions/intake";
+import { submitIntakeForm } from "@/actions/intake";
 import type { TreatmentPlan, TriageQuestion } from "@/actions/generatePlan";
 import { useDictation } from "@/hooks/useDictation";
+import type { IntakeSnapshot } from "@/lib/analysis/progressCopy";
+import type { DetectedCondition, Escalation } from "@/lib/clinical/assessment";
+import {
+  AI_DISCLAIMER_TEXT,
+  MAX_FILES_PER_CATEGORY,
+  type ReportCategory,
+} from "@/lib/intake/reportFiles";
+import type { ScheduleDayWithSteps, StoredTreatmentPlan } from "@/lib/progress/dailyProgress";
 
 export type TreatmentRoutineStep = TreatmentPlan["steps"][number];
-export type TreatmentScheduleDay = TreatmentPlan["schedule"]["days"][number];
-export type TreatmentPlanPayload = Omit<TreatmentPlan, "schedule"> & {
-  schedule?: TreatmentPlan["schedule"];
-};
+export type TreatmentScheduleDay = ScheduleDayWithSteps;
+export type TreatmentPlanPayload = StoredTreatmentPlan;
 
 export type InitialQuiz = {
   id: string;
@@ -39,16 +45,23 @@ function Icon({ children, size = 18 }: { children: ReactNode; size?: number }) {
   );
 }
 
+export type TriageReadyResult = {
+  reportId: string;
+  /** null when the case was escalated for in-person care and no quiz was made. */
+  quizId: string | null;
+  questions: TriageQuestion[];
+  condition: DetectedCondition | null;
+  escalation: Escalation | null;
+};
+
 type SidebarIntakeProps = {
   reportsSubmitted: boolean;
   flowPhase: FlowPhase;
   flowError: string | null;
-  onPreparing: (hasFiles: boolean) => void;
-  onTriageReady: (result: {
-    reportId: string;
-    quizId: string;
-    questions: TriageQuestion[];
-  }) => void;
+  onPreparing: (intake: IntakeSnapshot) => void;
+  onTriageReady: (result: TriageReadyResult) => void;
+  /** Rendered under the intake form, e.g. the detected-condition card. */
+  summary?: ReactNode;
   onError: (message: string) => void;
   onRerunAnalysis: () => void;
 };
@@ -56,10 +69,151 @@ type SidebarIntakeProps = {
 type SelectedFile = {
   file: File;
   preview: string;
+  category: ReportCategory;
   uploadStatus: "pending" | "uploading" | "success" | "error";
   url?: string;
   storage?: "azure" | "local";
 };
+
+const DROPZONES: Record<
+  ReportCategory,
+  { title: string; detail: string; listLabel: string; icon: ReactNode }
+> = {
+  scan: {
+    title: "Medical scans / imaging",
+    detail: "MRI, X-ray, CT scan or other diagnostic imaging",
+    listLabel: "Selected scans",
+    icon: (
+      <>
+        <rect height="16" rx="2" stroke="currentColor" strokeWidth="1.6" width="18" x="3" y="4" />
+        <path d="M12 8v8M9 10.5c1 .6 5 .6 6 0M9 13.5c1 .6 5 .6 6 0" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+      </>
+    ),
+  },
+  prescription: {
+    title: "Clinical prescriptions & notes",
+    detail: "Prescriptions, assessment notes or reports from a doctor, physio or other clinician",
+    listLabel: "Selected prescriptions and notes",
+    icon: (
+      <>
+        <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+        <path d="M14 3v5h5M9 13h6M9 17h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+      </>
+    ),
+  },
+};
+
+function ReportDropzone({
+  category,
+  files,
+  isDragging,
+  onDragChange,
+  onFiles,
+  onRemove,
+}: {
+  category: ReportCategory;
+  files: SelectedFile[];
+  isDragging: boolean;
+  onDragChange: (dragging: boolean) => void;
+  onFiles: (files: FileList | null) => void;
+  onRemove: (preview: string) => void;
+}) {
+  const zone = DROPZONES[category];
+  const inputId = `intake-${category}-files`;
+
+  return (
+    <div>
+      <label
+        className={`${interactive} relative flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-white/25 bg-zinc-950 px-3 py-3 hover:border-emerald-300/60 ${
+          isDragging ? "border-emerald-300 bg-emerald-300/10" : ""
+        }`}
+        htmlFor={inputId}
+        onDragEnter={() => onDragChange(true)}
+        onDragLeave={() => onDragChange(false)}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          onDragChange(false);
+          onFiles(event.dataTransfer.files);
+        }}
+      >
+        <input
+          accept="image/*,application/pdf"
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          id={inputId}
+          onChange={(event) => {
+            onFiles(event.currentTarget.files);
+            event.currentTarget.value = "";
+          }}
+          multiple
+          type="file"
+        />
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-emerald-300/40 text-emerald-300">
+          <Icon size={18}>{zone.icon}</Icon>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-medium">{zone.title}</span>
+          <span className="mt-0.5 block text-[10px] leading-relaxed text-white/60">{zone.detail}</span>
+        </span>
+        <span className="shrink-0 text-[10px] text-emerald-300">
+          {files.length > 0 ? `${files.length} added` : "Browse"}
+        </span>
+      </label>
+      {files.length > 0 ? (
+        <div className="mt-2 space-y-2" aria-label={zone.listLabel}>
+          {files.map((item) => (
+            <div
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-950 px-2 py-2"
+              key={item.preview}
+            >
+              {item.file.type.startsWith("image/") ? (
+                <Image
+                  alt=""
+                  className="h-9 w-9 rounded-lg object-cover"
+                  height={36}
+                  src={item.preview}
+                  unoptimized
+                  width={36}
+                />
+              ) : (
+                <span className="grid h-9 w-9 place-items-center rounded-lg border border-red-300/30 bg-red-300/10 text-[9px] font-semibold text-red-200">
+                  PDF
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[10px] text-white/80">{item.file.name}</span>
+                <span className="mt-0.5 flex items-center gap-1.5 text-[9px] text-white/45">
+                  {item.uploadStatus === "uploading" ? (
+                    <>
+                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-white/25 border-t-emerald-300" />
+                      Uploading
+                    </>
+                  ) : item.uploadStatus === "success" ? (
+                    <span className="text-emerald-300">
+                      Uploaded successfully{item.storage === "local" ? " · local fallback" : ""}
+                    </span>
+                  ) : item.uploadStatus === "error" ? (
+                    <span className="text-red-200">Upload failed. Remove it and try again.</span>
+                  ) : (
+                    "Preparing upload"
+                  )}
+                </span>
+              </span>
+              <button
+                aria-label={`Remove ${item.file.name}`}
+                className={`${interactive} grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sm text-white/45 hover:bg-white/10 hover:text-white`}
+                onClick={() => onRemove(item.preview)}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function SidebarIntake({
   reportsSubmitted,
@@ -69,9 +223,12 @@ export function SidebarIntake({
   onTriageReady,
   onError,
   onRerunAnalysis,
+  summary,
 }: SidebarIntakeProps) {
-  const [isDragging, setIsDragging] = useState(false);
+  const [draggingZone, setDraggingZone] = useState<ReportCategory | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [symptoms, setSymptoms] = useState(
     "Pain and stiffness around the right knee after long walks.",
   );
@@ -83,14 +240,21 @@ export function SidebarIntake({
     stopListening,
   } = useDictation();
   const syncedTranscriptLength = useRef(0);
+  const scanFiles = selectedFiles.filter((item) => item.category === "scan");
+  const prescriptionFiles = selectedFiles.filter((item) => item.category === "prescription");
+  // A prescription that failed to upload does not count; the patient must remove it anyway.
+  const hasPrescription = prescriptionFiles.some((item) => item.uploadStatus !== "error");
   const canSubmit =
     symptoms.trim().length > 0 &&
     flowPhase === "discovery" &&
-    selectedFiles.every((item) => item.uploadStatus === "success");
+    selectedFiles.every((item) => item.uploadStatus === "success") &&
+    (hasPrescription || disclaimerAccepted);
   const resetIntake = () => {
     selectedFiles.forEach((item) => URL.revokeObjectURL(item.preview));
     previewUrls.current.clear();
     setSelectedFiles([]);
+    setUploadNotice(null);
+    setDisclaimerAccepted(false);
     setSymptoms("Pain and stiffness around the right knee after long walks.");
     onRerunAnalysis();
   };
@@ -102,15 +266,25 @@ export function SidebarIntake({
     };
   }, []);
 
-  const acceptReports = (files: FileList | null) => {
-    if (!files) {
+  const acceptReports = (files: FileList | null, category: ReportCategory) => {
+    setDraggingZone(null);
+    if (!files || files.length === 0) {
       return;
     }
 
-    setIsDragging(false);
-    const newFiles = Array.from(files).map((file) => ({
+    const existing = selectedFiles.filter((item) => item.category === category).length;
+    const room = Math.max(0, MAX_FILES_PER_CATEGORY - existing);
+    const accepted = Array.from(files).slice(0, room);
+    setUploadNotice(
+      accepted.length < files.length
+        ? `Each section accepts up to ${MAX_FILES_PER_CATEGORY} files. ${files.length - accepted.length} file${files.length - accepted.length === 1 ? " was" : "s were"} not added.`
+        : null,
+    );
+
+    const newFiles = accepted.map((file) => ({
       file,
       preview: URL.createObjectURL(file),
+      category,
       uploadStatus: "pending" as const,
     }));
 
@@ -131,7 +305,9 @@ export function SidebarIntake({
     try {
       const payload = new FormData();
       payload.set("scanFile", file);
-      const result = await uploadScanFile(payload);
+      const response = await fetch("/api/upload", { method: "POST", body: payload });
+      if (!response.ok) throw new Error(`Upload failed (${response.status}).`);
+      const result = (await response.json()) as { storage?: "azure" | "local"; url: string };
       setSelectedFiles((current) =>
         current.map((item) =>
           item.preview === preview
@@ -169,11 +345,20 @@ export function SidebarIntake({
 
     const submission = new FormData();
     submission.set("primarySymptoms", symptoms.trim());
-    selectedFiles
-      .filter((item) => item.uploadStatus === "success" && item.url)
-      .forEach((item) => submission.append("fileUrl", item.url as string));
+    for (const item of selectedFiles) {
+      if (item.uploadStatus === "success" && item.url) {
+        submission.append(item.category === "scan" ? "scanUrl" : "prescriptionUrl", item.url);
+      }
+    }
+    if (!hasPrescription) {
+      submission.set("aiDisclaimerAccepted", String(disclaimerAccepted));
+    }
 
-    onPreparing(selectedFiles.length > 0);
+    onPreparing({
+      symptoms: symptoms.trim(),
+      scanCount: scanFiles.length,
+      prescriptionCount: prescriptionFiles.length,
+    });
 
     try {
       const result = await submitIntakeForm(submission);
@@ -182,6 +367,8 @@ export function SidebarIntake({
           reportId: result.reportId,
           quizId: result.quizId,
           questions: result.questions,
+          condition: result.condition,
+          escalation: result.escalation,
         });
       } else {
         onError(
@@ -226,99 +413,52 @@ export function SidebarIntake({
           </div>
         ) : (
           <>
-        <label
-          className={`${interactive} relative flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/25 bg-zinc-950 text-center hover:border-emerald-300/60 ${
-            isDragging ? "border-emerald-300 bg-emerald-300/10" : ""
-          }`}
-          onDragEnter={() => setIsDragging(true)}
-          onDragLeave={() => setIsDragging(false)}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault();
-            acceptReports(event.dataTransfer.files);
-          }}
-        >
-          <input
-            accept="image/*,application/pdf"
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            name="scanFile"
-            onChange={(event) => {
-              acceptReports(event.currentTarget.files);
-              event.currentTarget.value = "";
-            }}
-            multiple
-            type="file"
-          />
-          <span className="grid h-10 w-10 place-items-center rounded-xl border border-emerald-300/40 text-emerald-300">
-            <Icon size={20}>
-              <path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
-            </Icon>
-          </span>
-          <span className="text-xs font-medium">Drop all reports here</span>
-          <span className="max-w-[240px] text-[10px] leading-relaxed text-white/60">
-            (MRI, X-ray, doctor or physio report) · multiple files welcome
-          </span>
-          <span className="text-[10px] text-emerald-300">Browse files</span>
-        </label>
-        {selectedFiles.length > 0 ? (
-          <div className="mt-3 space-y-2" aria-label="Selected reports">
-            {selectedFiles.map((item) => (
-              <div
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-950 px-2 py-2"
-                key={item.preview}
-              >
-                {item.file.type.startsWith("image/") ? (
-                  <Image
-                    alt=""
-                    className="h-9 w-9 rounded-lg object-cover"
-                    height={36}
-                    src={item.preview}
-                    unoptimized
-                    width={36}
-                  />
-                ) : (
-                  <span className="grid h-9 w-9 place-items-center rounded-lg border border-red-300/30 bg-red-300/10 text-[9px] font-semibold text-red-200">
-                    PDF
-                  </span>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[10px] text-white/80">{item.file.name}</span>
-                  <span className="mt-0.5 flex items-center gap-1.5 text-[9px] text-white/45">
-                    {item.uploadStatus === "uploading" ? (
-                      <>
-                        <span className="h-2.5 w-2.5 animate-spin rounded-full border border-white/25 border-t-emerald-300" />
-                        Uploading
-                      </>
-                    ) : item.uploadStatus === "success" ? (
-                      <span className="text-emerald-300">
-                        Uploaded successfully{item.storage === "local" ? " · local fallback" : ""}
-                      </span>
-                    ) : item.uploadStatus === "error" ? (
-                      <span className="text-red-200">Upload failed</span>
-                    ) : (
-                      "Preparing upload"
-                    )}
-                  </span>
-                </span>
-                <button
-                  aria-label={`Remove ${item.file.name}`}
-                  className={`${interactive} grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sm text-white/45 hover:bg-white/10 hover:text-white`}
-                  onClick={() => removeFile(item.preview)}
-                  type="button"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="mt-3 rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-2.5 text-[10px] leading-relaxed text-amber-100/85">
-          <p className="font-semibold text-amber-200">Clinical note</p>
-          <p className="mt-1">
-            For the most reliable analysis, upload a scanned doctor or physiotherapist prescription.
-            Imaging and report scans may not be interpreted with complete accuracy.
-          </p>
+        <div className="space-y-3">
+          {(["scan", "prescription"] as const).map((category) => (
+            <ReportDropzone
+              category={category}
+              files={category === "scan" ? scanFiles : prescriptionFiles}
+              isDragging={draggingZone === category}
+              key={category}
+              onDragChange={(dragging) => setDraggingZone(dragging ? category : null)}
+              onFiles={(files) => acceptReports(files, category)}
+              onRemove={removeFile}
+            />
+          ))}
         </div>
+        {uploadNotice ? (
+          <p className="mt-2 text-[10px] text-amber-100/85" role="status">
+            {uploadNotice}
+          </p>
+        ) : null}
+        {hasPrescription ? (
+          <div className="mt-3 rounded-xl border border-emerald-300/25 bg-emerald-300/10 px-3 py-2.5 text-[10px] leading-relaxed text-emerald-100/85">
+            <p className="font-semibold text-emerald-200">Prescription provided</p>
+            <p className="mt-1">The analysis will follow your clinician&apos;s guidance and limits.</p>
+          </div>
+        ) : (
+          <label
+            className={`${interactive} mt-3 flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 text-[10px] leading-relaxed ${
+              disclaimerAccepted
+                ? "border-amber-300/20 bg-amber-300/5 text-amber-100/75"
+                : "border-amber-300/40 bg-amber-300/10 text-amber-100/90"
+            }`}
+            htmlFor="ai-disclaimer"
+          >
+            <input
+              checked={disclaimerAccepted}
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-amber-300"
+              id="ai-disclaimer"
+              onChange={(event) => setDisclaimerAccepted(event.target.checked)}
+              required
+              type="checkbox"
+            />
+            <span>
+              <span className="block font-semibold text-amber-200">No prescription uploaded</span>
+              <span className="mt-1 block">{AI_DISCLAIMER_TEXT}</span>
+            </span>
+          </label>
+        )}
         <label className="mt-3 block text-xs text-white/85" htmlFor="symptoms">
           Describe your symptoms
         </label>
@@ -348,15 +488,23 @@ export function SidebarIntake({
         <div className="mt-3 flex items-center justify-between gap-3">
           <span className="min-w-0 truncate text-[10px] text-white/60">
             {selectedFiles.length > 0
-              ? `${selectedFiles.length} report${selectedFiles.length === 1 ? "" : "s"} ready`
-              : "Reports are optional for triage"}
+              ? [
+                  scanFiles.length > 0 && `${scanFiles.length} scan${scanFiles.length === 1 ? "" : "s"}`,
+                  prescriptionFiles.length > 0 &&
+                    `${prescriptionFiles.length} prescription${prescriptionFiles.length === 1 ? "" : "s"}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") + " ready"
+              : hasPrescription || disclaimerAccepted
+                ? "Uploads are optional"
+                : "Confirm the note above to continue"}
           </span>
           <button
             className={`${interactive} shrink-0 rounded-lg bg-emerald-300 px-3 py-2 text-[10px] font-semibold text-black hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-35`}
             disabled={!canSubmit}
             type="submit"
           >
-            {reportsSubmitted ? "Triage started" : "Start diagnostic triage"}
+            {reportsSubmitted ? "Triage started" : "Start diagnostic"}
           </button>
         </div>
         {flowError && flowPhase === "discovery" ? (
@@ -367,6 +515,8 @@ export function SidebarIntake({
           </>
         )}
       </form>
+
+      {summary}
 
       <section className={`workspace-panel rounded-2xl border border-white/15 bg-zinc-900 p-4 ${!reportsSubmitted ? "opacity-65" : ""}`}>
         <div className="flex items-start justify-between">
@@ -387,58 +537,6 @@ export function SidebarIntake({
     </>
   );
 }
-
-type StagePanelProps = {
-  reportsSubmitted: boolean;
-  planUnlocked: boolean;
-  selectedCareDay: { day: string; date: string };
-};
-
-export const StagePanel = memo(function StagePanel({
-  reportsSubmitted,
-  planUnlocked,
-  selectedCareDay,
-}: StagePanelProps) {
-  return (
-    <div data-stage-panel className={`workspace-stage ${planUnlocked ? "col-span-6" : "col-span-9"} relative flex items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-zinc-900 ${!reportsSubmitted ? "grayscale-[35%]" : ""}`}>
-      <div className="absolute h-56 w-56 rounded-full border border-emerald-200/20" />
-      <div className="relative z-10 grid h-36 w-36 place-items-center rounded-full border border-emerald-200/35 bg-emerald-200/10">
-        <div className="grid h-20 w-20 place-items-center rounded-full border border-emerald-200/55 bg-zinc-950 text-2xl font-light tracking-[-0.08em] text-emerald-100">
-          3D
-        </div>
-      </div>
-      <div className="absolute left-5 right-5 top-5 flex items-center justify-between text-[10px]">
-        <span className="flex items-center gap-2 text-emerald-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-          live stage
-        </span>
-        <span className="text-white/60">anterior view · neutral</span>
-      </div>
-      <div className="absolute bottom-5 right-5 text-right">
-        <p className="text-[10px] text-white/55">SomaCue stage / {selectedCareDay.day} {selectedCareDay.date}</p>
-        <p className="mt-1 text-sm text-white/85">3D Body Stage - Ready for R3F</p>
-      </div>
-      <div className="absolute bottom-4 left-4 flex gap-2">
-        <button className={`${interactive} rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-[10px] text-white/70 hover:bg-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-35`} disabled={!reportsSubmitted} type="button">
-          Anterior
-        </button>
-        <button className={`${interactive} rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-[10px] text-white/70 hover:bg-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-35`} disabled={!reportsSubmitted} type="button">
-          Posterior
-        </button>
-      </div>
-      {!reportsSubmitted ? (
-        <div className="absolute inset-0 z-20 grid place-items-center bg-zinc-950/85 p-6 text-center">
-          <div className="max-w-xs rounded-2xl border border-white/20 bg-zinc-950 px-5 py-4">
-            <p className="text-sm font-medium">3D stage locked</p>
-            <p className="mt-2 text-xs leading-relaxed text-white/70">
-              Submit the patient reports and symptom notes to activate the movement stage.
-            </p>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-});
 
 type QuizModalProps = {
   triageQuiz: InitialQuiz;

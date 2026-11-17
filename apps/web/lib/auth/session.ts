@@ -7,6 +7,7 @@ import {
   signSession,
   verifySession,
 } from "./jwt";
+import { normalizeEmail } from "./validation";
 
 export type UserRole = "patient" | "clinician" | "admin";
 
@@ -17,7 +18,8 @@ export type SessionUser = {
   role: UserRole;
 };
 
-export type UserRecord = SessionUser & { passwordHash: string };
+/** passwordHash is null for accounts created with Google sign-in. */
+export type UserRecord = SessionUser & { passwordHash: string | null };
 
 export type CreateUserInput = {
   email: string;
@@ -28,10 +30,6 @@ export type CreateUserInput = {
 
 const SALT_ROUNDS = 10;
 const USER_ROLES: readonly string[] = ["patient", "clinician", "admin"];
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
 
 function isUserRole(value: string): value is UserRole {
   return USER_ROLES.includes(value);

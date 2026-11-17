@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:motion": "vitest run --config vitest.motion.config.mts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.114",

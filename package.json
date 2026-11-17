@@ -21,6 +21,8 @@
     "verify:auth": "node scripts/verify-auth.cjs",
     "verify:3d-lab": "node scripts/verify-3d-lab.cjs",
     "verify:lab-first-frame": "node scripts/verify-lab-first-frame.cjs",
+    "verify:motion": "pnpm --filter @somacue/web verify:motion",
+    "build:body": "node scripts/build-soma-body.mjs",
     "postinstall": "prisma generate"
   },
   "devDependencies": {

@@ -1,0 +1,311 @@
+/* Hallmark · shape: product stage · genre: modern-minimal · theme: custom · job: sign up · idea: "A patient's intake desk, read like a case file" · vibe: "clinical bench, dark emerald, quiet instrument"
+ * paper: oklch(9.2% 0.014 198) · accent: oklch(84.5% 0.143 165) · display: Rethink Sans · body: Hanken Grotesk · hero: scripted intake to 3D guidance in a faux workspace · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4 · weakest: V, the faux window is a fixed product shape */
+
+.host {
+  background: transparent;
+  overflow: visible;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.stage {
+  width: 100%;
+}
+
+.window {
+  width: 100%;
+  height: 100%;
+}
+
+.body {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-md);
+  padding: var(--space-md);
+}
+
+.grid[data-layout="compact"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rail {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  transition:
+    opacity var(--dur-long) var(--ease-out),
+    transform var(--dur-long) var(--ease-out);
+}
+
+
+
+.center {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.grid[data-layout="compact"] .center {
+  position: absolute;
+  inset: var(--space-md);
+}
+
+.center {
+  transition: opacity var(--dur-long) var(--ease-out);
+}
+
+
+
+/* Intake panel */
+.intake {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  height: 100%;
+}
+
+.zone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px dashed var(--workspace-rule-strong);
+  border-radius: var(--radius-shell);
+  background: var(--workspace-well);
+}
+
+.zoneTitle {
+  color: var(--stage-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.zoneBody {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+.browse,
+.file {
+  position: absolute;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--stage-ink-2);
+  transition: opacity var(--dur-short) var(--ease-out);
+}
+
+.browse {
+  padding: var(--space-2xs) var(--space-sm);
+  border: 1px solid var(--workspace-rule-strong);
+  border-radius: var(--radius-input);
+}
+
+.browse[data-show="false"],
+.file[data-show="false"] {
+  opacity: 0;
+}
+
+.ack {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: flex-start;
+  padding: var(--space-sm);
+  border: 1px solid var(--workspace-rule-strong);
+  border-radius: var(--radius-shell);
+  background: var(--workspace-well);
+  color: var(--stage-ink-2);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.start {
+  width: 100%;
+}
+
+/* Movement stage */
+.stagePanel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--workspace-rule);
+  border-radius: var(--radius-shell);
+  background: var(--stage-bg);
+}
+
+.stageTop {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-md) 0;
+  font-size: var(--text-xs);
+}
+
+.live {
+  color: var(--stage-accent);
+}
+
+.muted {
+  color: var(--stage-muted);
+}
+
+.frames {
+  position: absolute;
+  inset: 40px 0 92px;
+}
+
+.frame {
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity var(--dur-long) var(--ease-out);
+}
+
+.frame[data-on="true"] {
+  opacity: 1;
+}
+
+.caption {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  z-index: 2;
+  padding: var(--space-3xs) var(--space-md);
+  border: 1px solid color-mix(in oklab, var(--stage-accent) 45%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--stage-accent) 14%, transparent);
+  color: var(--stage-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  translate: -50% 0;
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease-out);
+}
+
+.caption[data-show="true"] {
+  opacity: 1;
+}
+
+.stageFoot {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-top: 1px solid var(--workspace-rule);
+  background: var(--workspace-panel);
+}
+
+.exercise {
+  color: var(--stage-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.badge {
+  position: absolute;
+  left: var(--space-md);
+  bottom: 96px;
+  z-index: 2;
+  padding: var(--space-3xs) var(--space-xs);
+  border: 1px solid color-mix(in oklab, var(--workspace-signal) 30%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--workspace-signal) 10%, transparent);
+  color: var(--stage-ink-2);
+  font-size: var(--text-xs);
+}
+
+.lock {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  background: color-mix(in oklab, var(--stage-bg) 97%, transparent);
+  text-align: center;
+  transition: opacity var(--dur-long) var(--ease-out);
+}
+
+.lock[data-show="false"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lockTitle {
+  color: var(--stage-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.lockBody {
+  max-width: 24ch;
+  color: var(--stage-muted);
+  font-size: var(--text-sm);
+}
+
+.grid[data-layout="compact"] .stageFoot {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.grid[data-layout="compact"] .badge {
+  display: none;
+}
+
+.grid[data-layout="compact"] .frames {
+  inset: 36px 0 150px;
+}
+
+.stageFoot [data-testid="rep-count"] {
+  color: var(--stage-ink-2);
+}
+
+.stageFoot [data-testid="rep-count"] span {
+  color: var(--stage-ink);
+}
+
+.cardLayer {
+  zoom: 0.8;
+}
+
+.cardLayer section > p:last-child {
+  display: none;
+}
+

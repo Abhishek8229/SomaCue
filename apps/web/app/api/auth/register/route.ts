@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
+import { checkRateLimits, clientIp, rateLimitMessage, registerRules } from "@/lib/auth/rateLimit";
+import { safeNextPath } from "@/lib/auth/redirect";
+import { createSessionCookie, createUser, findUserByEmail } from "@/lib/auth/session";
 import {
-  createSessionCookie,
-  createUser,
-  findUserByEmail,
-} from "@/lib/auth/session";
-import {
+  normalizeEmail,
   validateEmail,
   validateName,
   validatePassword,
@@ -14,39 +13,46 @@ type RegisterBody = {
   email?: unknown;
   password?: unknown;
   name?: unknown;
+  next?: unknown;
 };
+
+function fail(status: number, error: string, extra: Record<string, unknown> = {}, headers?: HeadersInit) {
+  return NextResponse.json({ success: false, error, ...extra }, { status, headers });
+}
 
 export async function POST(request: Request) {
   let body: RegisterBody;
   try {
     body = (await request.json()) as RegisterBody;
   } catch {
-    return NextResponse.json(
-      { success: false, error: "Request body must be valid JSON." },
-      { status: 400 },
-    );
-  }
-
-  const emailError = validateEmail(body.email);
-  if (emailError) {
-    return NextResponse.json({ success: false, error: emailError }, { status: 400 });
-  }
-
-  const passwordError = validatePassword(body.password);
-  if (passwordError) {
-    return NextResponse.json({ success: false, error: passwordError }, { status: 400 });
+    return fail(400, "Request body must be valid JSON.");
   }
 
   const nameError = validateName(body.name);
-  if (nameError) {
-    return NextResponse.json({ success: false, error: nameError }, { status: 400 });
+  if (nameError) return fail(400, nameError, { field: "name" });
+
+  const emailError = validateEmail(body.email);
+  if (emailError) return fail(400, emailError, { field: "email" });
+
+  const passwordError = validatePassword(body.password);
+  if (passwordError) return fail(400, passwordError, { field: "password" });
+
+  const email = normalizeEmail(String(body.email));
+  const limit = checkRateLimits(registerRules(clientIp(request.headers), email));
+  if (!limit.allowed) {
+    return fail(429, rateLimitMessage(limit.retryAfterSeconds), {}, {
+      "Retry-After": String(limit.retryAfterSeconds),
+    });
   }
 
-  const email = String(body.email).trim().toLowerCase();
-  if (await findUserByEmail(email)) {
-    return NextResponse.json(
-      { success: false, error: "An account with this email already exists." },
-      { status: 409 },
+  const existing = await findUserByEmail(email);
+  if (existing) {
+    return fail(
+      409,
+      existing.passwordHash
+        ? "An account with this email already exists. Sign in instead."
+        : "An account with this email already exists and uses Google. Choose Continue with Google.",
+      { field: "email" },
     );
   }
 
@@ -58,5 +64,5 @@ export async function POST(request: Request) {
   });
   await createSessionCookie(user);
 
-  return NextResponse.json({ success: true, user }, { status: 201 });
+  return NextResponse.json({ success: true, user, next: safeNextPath(body.next) }, { status: 201 });
 }

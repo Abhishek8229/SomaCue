@@ -7,3 +7,10 @@ dist
 apps/web/generated/
 *.tsbuildinfo
 apps/web/public/uploads/
+# Source asset packs (large). Built output lives in apps/web/public/assets/stage/.
+apps/web/public/models/
+
+# Local logs, scratch output and generated design-tool artifacts
+*.log
+.tmp-*/
+apps/web/.hallmark/

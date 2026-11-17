@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import type { SessionUser } from "@/lib/auth/session";
 import styles from "./Navbar.module.css";
@@ -49,7 +49,11 @@ function SignOutButton() {
 }
 
 export function Navbar({ user }: NavbarProps) {
+  const pathname = usePathname();
   const badgeLabel = user?.role === "clinician" ? "Dr." : "Pt.";
+
+  // The landing and auth pages draw their own navigation.
+  if (pathname === "/" || pathname === "/login" || pathname === "/register") return null;
 
   return (
     <header className={styles.bar}>
@@ -61,11 +65,19 @@ export function Navbar({ user }: NavbarProps) {
         {user ? (
           <nav className={styles.nav} aria-label="Signed in">
             <div className={styles.links}>
-              <Link href="/dashboard" className={styles.link}>
-                Overview
+              <Link
+                href="/dashboard"
+                className={styles.link}
+                aria-current={pathname.startsWith("/dashboard") ? "page" : undefined}
+              >
+                Dashboard
               </Link>
-              <Link href="/workspace" className={styles.link}>
-                Workspace
+              <Link
+                href="/workspace"
+                className={styles.link}
+                aria-current={pathname.startsWith("/workspace") ? "page" : undefined}
+              >
+                Rehab Studio
               </Link>
             </div>
             <span className={styles.badge}>
@@ -76,7 +88,7 @@ export function Navbar({ user }: NavbarProps) {
         ) : (
           <nav className={styles.nav} aria-label="Guest">
             <div className={styles.links}>
-              <Link href="/#platform" className={styles.link}>
+              <Link href="/#intake" className={styles.link}>
                 How it works
               </Link>
             </div>

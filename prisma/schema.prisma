@@ -10,7 +10,11 @@ datasource db {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
-  passwordHash String
+  /// Null for accounts created through Google sign-in.
+  passwordHash String?
+  /// Google account id (the "sub" claim). Set when the user signs in with Google.
+  googleId     String?  @unique
+  avatarUrl    String?
   name         String
   role         String
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
@@ -18,6 +22,7 @@ model User {
 
   patientAssessments   ClinicalAssessment[] @relation("PatientAssessments")
   clinicianAssessments ClinicalAssessment[] @relation("ClinicianAssessments")
+  chatMessages         ChatMessage[]
 }
 
 model ClinicalAssessment {
@@ -43,15 +48,106 @@ model ClinicalReport {
   patientId       String
   weekNumber      Int      @default(1)
   primarySymptoms String
+  /// Every uploaded file (scans and prescriptions). Older reports only have this.
   fileUrls        String[]
+  /// MRIs, X-rays, CT scans and other diagnostic imaging.
+  scanUrls         String[]  @default([])
+  /// Prescriptions and notes from a doctor, physiotherapist or other clinician.
+  prescriptionUrls String[]  @default([])
+  /// Set when the patient acknowledged AI limits because no prescription was uploaded.
+  aiDisclaimerAcceptedAt DateTime? @db.Timestamptz(3)
+  /// Condition identified at triage, e.g. "L4–L5 disc bulge".
+  conditionTitle   String?
+  /// Plain-language 2–3 sentence description of the condition.
+  conditionSummary String?
+  /// What the condition was derived from: reports_and_scans, reports_and_symptoms,
+  /// scans_and_symptoms, files_and_symptoms or symptoms_only.
+  conditionSource  String?
+  /// The triage AI judged that guided online rehab is not safe for this case.
+  requiresInPersonCare Boolean @default(false)
+  /// The triage AI's safety reasoning.
+  careReason       String?
+  /// "triage" or "progress" once the platform is locked for in-person care.
+  escalationKind     String?
+  escalationReason   String?
+  escalationEvidence String[]  @default([])
+  escalatedAt        DateTime? @db.Timestamptz(3)
   adaptiveData    Json     @db.JsonB
   createdAt       DateTime @default(now()) @db.Timestamptz(3)
 
   triageQuiz    TriageQuiz?
   treatmentPlan TreatmentPlan?
+  dailyProgress DailyProgress[]
+  painEvents    PainEvent[]
+  chatMessages  ChatMessage[]
 
   @@index([patientId])
   @@index([createdAt])
+}
+
+/// Rehab Companion chat. Each intake (report) has its own conversation, so a
+/// new intake starts a clean chat. clearedAt hides messages without deleting
+/// them, so clearing the chat never resets the daily message limit.
+model ChatMessage {
+  id               String    @id @default(uuid())
+  patientId        String
+  /// null for a conversation before the first intake
+  clinicalReportId String?
+  /// "user" or "assistant"
+  role             String
+  content          String
+  /// Why a guard answered instead of the AI: off_topic, injection, red_flag,
+  /// rate_limit. null for AI answers and normal user messages.
+  guard            String?
+  clearedAt        DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  patient        User            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicalReport ClinicalReport? @relation(fields: [clinicalReportId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, createdAt])
+  @@index([clinicalReportId, createdAt])
+}
+
+model PainEvent {
+  id               String    @id @default(uuid())
+  clinicalReportId String
+  patientId        String
+  dateKey          String
+  exerciseNames    String[]
+  painType         String
+  regions          String[]
+  details          String
+  context          Json      @db.JsonB
+  rescheduledAt    DateTime? @db.Timestamptz(3)
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  clinicalReport ClinicalReport @relation(fields: [clinicalReportId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([clinicalReportId, dateKey])
+}
+
+model DailyProgress {
+  id                  String    @id @default(uuid())
+  clinicalReportId    String
+  patientId           String
+  dateKey             String
+  completedExercises  String[]
+  completedAt         DateTime? @db.Timestamptz(3)
+  feedback            String?
+  notes               String?
+  discomfortExercises String[]
+  discomfortDetails   String?
+  rescheduledAt       DateTime? @db.Timestamptz(3)
+  stoppedAt           DateTime? @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+
+  clinicalReport ClinicalReport @relation(fields: [clinicalReportId], references: [id], onDelete: Cascade)
+
+  @@unique([clinicalReportId, dateKey])
+  @@index([patientId])
 }
 
 model TriageQuiz {

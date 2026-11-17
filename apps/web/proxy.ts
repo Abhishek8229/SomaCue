@@ -18,12 +18,12 @@ export async function proxy(request: NextRequest) {
 
   if (matchesPrefix(pathname, PROTECTED_PREFIXES) && !session) {
     const target = new URL("/login", request.url);
-    target.searchParams.set("from", pathname);
+    target.searchParams.set("next", pathname);
     return NextResponse.redirect(target);
   }
 
   if (matchesPrefix(pathname, AUTH_PREFIXES) && session) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL("/workspace", request.url));
   }
 
   return NextResponse.next();
