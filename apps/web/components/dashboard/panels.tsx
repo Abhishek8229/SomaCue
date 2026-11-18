@@ -121,9 +121,6 @@ export function TodayPanel({ model }: { model: DashboardModel }) {
         <ul className={styles.exercises}>
           {today.exercises.map((exercise) => (
             <li className={styles.exercise} key={exercise.name}>
-              <span aria-hidden="true" className={styles.check} data-done={exercise.done}>
-                {exercise.done ? <CheckMark /> : null}
-              </span>
               <div>
                 <p className={styles.exerciseName}>
                   {exercise.name}
@@ -134,7 +131,9 @@ export function TodayPanel({ model }: { model: DashboardModel }) {
                   {exercise.pacing ? <span>{exercise.pacing}</span> : null}
                 </p>
               </div>
-              <span className={styles.duration}>{exercise.durationSeconds}s guided</span>
+              <span className={styles.duration} data-done={exercise.done}>
+                {exercise.done ? "Done" : `${exercise.durationSeconds}s guided`}
+              </span>
             </li>
           ))}
         </ul>

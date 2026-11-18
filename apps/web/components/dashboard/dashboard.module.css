@@ -172,6 +172,28 @@
   font-weight: 600;
 }
 
+/* Skipped-day alert */
+.skip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  padding: var(--space-md) var(--space-lg);
+  border: 1px solid color-mix(in oklab, var(--d-amber) 45%, transparent);
+  border-radius: var(--radius-shell);
+  background: var(--d-amber-soft);
+}
+
+.skipTitle {
+  color: var(--d-amber);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.skipBody {
+  color: var(--d-ink-2);
+}
+
 /* Guardrail band */
 .guard {
   display: grid;
@@ -348,7 +370,7 @@
 
 .exercise {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-md);
   align-items: center;
   padding: var(--space-md) var(--space-xs);
@@ -358,21 +380,6 @@
 
 .exercise:hover {
   background: var(--d-raised);
-}
-
-.check {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1.5px solid var(--d-rule-strong);
-  border-radius: 50%;
-  color: var(--d-signal-ink);
-}
-
-.check[data-done="true"] {
-  border-color: var(--d-signal);
-  background: var(--d-signal);
 }
 
 .exerciseName {
@@ -385,6 +392,11 @@
   gap: 0 var(--space-md);
   color: var(--d-ink-2);
   font-size: var(--text-ui);
+}
+
+.duration[data-done="true"] {
+  color: var(--d-signal);
+  font-weight: 600;
 }
 
 .duration {
@@ -902,11 +914,7 @@
   }
 
   .exercise {
-    grid-template-columns: 28px minmax(0, 1fr);
-  }
-
-  .duration {
-    grid-column: 2;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .zoom {

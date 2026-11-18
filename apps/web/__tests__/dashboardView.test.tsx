@@ -15,7 +15,7 @@ const dayKey = (offset: number) => {
   date.setDate(date.getDate() + offset);
   return toDateKey(date);
 };
-const planStart = new Date(Date.now() - 2 * 86_400_000).toISOString();
+const planStart = new Date().toISOString();
 
 const step = (exerciseName: string) => ({
   exerciseName,
@@ -77,7 +77,7 @@ const populated: DashboardSnapshot = {
 
 describe("dashboard for a new patient", () => {
   it("shows an onboarding state, not empty charts", () => {
-    render(<DashboardView serverTodayKey={today} snapshot={empty} />);
+    render(<DashboardView snapshot={empty} />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Welcome, Asha." })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /starts with one intake/i })).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("dashboard for a new patient", () => {
 
 describe("dashboard with an active plan", () => {
   it("greets the patient and shows the program context and the continue action", () => {
-    render(<DashboardView serverTodayKey={today} snapshot={populated} />);
+    render(<DashboardView snapshot={populated} />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Welcome back, Asha." })).toBeInTheDocument();
     expect(screen.getByText("Month 1 of 2: Calm and mobilise")).toBeInTheDocument();
@@ -99,7 +99,7 @@ describe("dashboard with an active plan", () => {
   });
 
   it("lists today's exercises with their real completion state and dose", () => {
-    render(<DashboardView serverTodayKey={today} snapshot={populated} />);
+    render(<DashboardView snapshot={populated} />);
 
     const prescription = screen.getByRole("region", { name: "Today's prescription" });
     expect(within(prescription).getByText("1 of 3 done")).toBeInTheDocument();
@@ -109,10 +109,13 @@ describe("dashboard with an active plan", () => {
     expect(rows.find((item) => item.textContent?.includes("Glute Bridge"))).toHaveTextContent("(not done yet)");
     expect(within(prescription).getAllByText("1 set of 10 reps").length).toBeGreaterThan(0);
     expect(within(prescription).getByRole("list", { name: "Next seven days" }).children).toHaveLength(2);
+    // No selection circles: done exercises say "Done", the rest show their length.
+    expect(within(prescription).getByText("Done")).toBeInTheDocument();
+    expect(within(prescription).getAllByText("60s guided")).toHaveLength(2);
   });
 
   it("shows the detected condition with its source and a way to start over", () => {
-    render(<DashboardView serverTodayKey={today} snapshot={populated} />);
+    render(<DashboardView snapshot={populated} />);
 
     expect(screen.getByText("Derived from medical reports & scans")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Start a new assessment" })).toHaveAttribute("href", "/workspace?new=1");
@@ -120,7 +123,7 @@ describe("dashboard with an active plan", () => {
   });
 
   it("reports the streak and the check-in readout from the logs", () => {
-    render(<DashboardView serverTodayKey={today} snapshot={populated} />);
+    render(<DashboardView snapshot={populated} />);
 
     const adherence = screen.getByRole("region", { name: "Adherence and streak" });
     expect(within(adherence).getByText(/session completed/).parentElement).toHaveTextContent("1");
@@ -130,7 +133,7 @@ describe("dashboard with an active plan", () => {
   });
 
   it("filters uploaded records by category", () => {
-    render(<DashboardView serverTodayKey={today} snapshot={populated} />);
+    render(<DashboardView snapshot={populated} />);
 
     const records = screen.getByRole("region", { name: "Uploaded clinical records" });
     expect(within(records).getByText("Scan 1")).toBeInTheDocument();
@@ -158,10 +161,31 @@ describe("dashboard with an active plan", () => {
         },
       ],
     };
-    render(<DashboardView serverTodayKey={today} snapshot={escalated} />);
+    render(<DashboardView snapshot={escalated} />);
 
     expect(screen.getByText("Guided exercises paused")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Review Safety Notice/ })).toBeInTheDocument();
     expect(screen.getByText(/Guided exercises are paused for this case/)).toBeInTheDocument();
+  });
+
+  it("alerts when yesterday was skipped and shows the plan moved forward", () => {
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+    const skipped: DashboardSnapshot = {
+      ...populated,
+      reports: [{ ...populated.reports[0], createdAt: yesterday, planCreatedAt: yesterday }],
+      progress: [],
+    };
+    render(<DashboardView snapshot={skipped} />);
+
+    const alert = screen.getByRole("status", { name: "Skipped day" });
+    expect(alert).toHaveTextContent(/You skipped/);
+    expect(alert).toHaveTextContent("Your plan moved forward one day");
+    expect(screen.getAllByText(/Day 2 of your plan/).length).toBeGreaterThan(0);
+  });
+
+  it("shows no skipped-day alert when nothing was missed", () => {
+    render(<DashboardView snapshot={populated} />);
+    expect(screen.queryByRole("status", { name: "Skipped day" })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Day 1 of your plan/).length).toBeGreaterThan(0);
   });
 });

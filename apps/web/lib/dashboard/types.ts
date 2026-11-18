@@ -131,6 +131,8 @@ export type DashboardModel = {
     dayNumber: number | null;
     startedOn: string | null;
   };
+  /** Set when working days passed with no exercise done and the plan moved forward. */
+  skipNotice: { title: string; body: string } | null;
   primaryAction: { href: string; label: string };
   condition: {
     title: string;

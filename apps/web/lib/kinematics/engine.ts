@@ -1,4 +1,5 @@
 import { Box3, Vector3 } from "three";
+import { buildAngleTrack, measureAngles, type AngleReading, type AngleTrack } from "./angles";
 import {
   lerpPose,
   mirrorRegions,
@@ -9,11 +10,13 @@ import { POSTURE_DEFS } from "./postures";
 import { sampleVertices, type BodyRig } from "./rig";
 import {
   basePose,
+  endPose,
   poseAt,
   prepareMovement,
   safeProgress,
   secondaryInContact,
   solvePose,
+  startPose,
   type SolveSetup,
 } from "./solver";
 import { minimumJerk, sampleTimeline, type TimelineSample } from "./timeline";
@@ -52,6 +55,9 @@ export class MotionEngine {
   private guided = false;
   private released = new Set<string>();
   private waiting: string | null = null;
+  /** joints that move in this exercise, per side (normal, mirrored) */
+  private tracks: [AngleTrack, AngleTrack] | null = null;
+  private trackVersion = 0;
 
   constructor(rig: BodyRig) {
     this.rig = rig;
@@ -74,10 +80,44 @@ export class MotionEngine {
       });
       const normal = make(false);
       this.sides = [normal, spec.alternateSides ? make(true) : normal];
+      const track = (mirrored: boolean) => {
+        const side = (this.sides as [SideState, SideState])[mirrored ? 1 : 0];
+        return buildAngleTrack(
+          this.rig,
+          (progress) => solvePose(this.rig, spec.posture, poseAt(spec, progress * side.safe, mirrored), side.setup),
+          { start: startPose(spec, mirrored), end: endPose(spec, mirrored) },
+        );
+      };
+      const first = track(false);
+      this.tracks = [first, spec.alternateSides ? track(true) : first];
     } else {
       this.sides = null;
+      this.tracks = null;
     }
+    this.trackVersion += 1;
     this.solveAt(0);
+  }
+
+  /** Changes whenever the set of tracked joints may have changed. */
+  get angleTrackVersion() {
+    return this.trackVersion;
+  }
+
+  /** Both sides' tracked joints, for building the overlays once per exercise. */
+  get angleTracks() {
+    return this.tracks;
+  }
+
+  /** Tracked joints for the side shown now; none while easing to rest. */
+  get angleTrack(): AngleTrack | null {
+    if (!this.tracks || this.rest) return null;
+    return this.tracks[this.lastSample?.mirrored ? 1 : 0];
+  }
+
+  /** Live joint angles of the pose the rig is in now. */
+  measureAngles(): AngleReading[] {
+    const track = this.angleTrack;
+    return track ? measureAngles(track) : [];
   }
 
   get currentSpec() {

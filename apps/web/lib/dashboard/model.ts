@@ -11,6 +11,15 @@ import {
   type ExerciseStep,
   type ScheduleDayWithSteps,
 } from "@/lib/progress/dailyProgress";
+import {
+  activeSkipNotice,
+  baseScheduleDays,
+  daysBetween,
+  describeSkipNotice,
+  isoToDateKey,
+  reconcileSchedule,
+  shiftDateKey,
+} from "@/lib/progress/schedule";
 import type {
   DashboardModel,
   DashboardProgressRow,
@@ -32,39 +41,19 @@ import type {
  * YYYY-MM-DD key, the same local-date key the workspace writes to DailyProgress.
  */
 
-const DAY_MS = 86_400_000;
 const RECENT_DAYS = 14;
 const TREND_POINTS = 14;
 const DAYS_PER_MONTH = 30;
+
+export { daysBetween, shiftDateKey };
 
 function keyToTime(dateKey: string): number {
   const [year, month, day] = dateKey.split("-").map(Number);
   return Date.UTC(year, month - 1, day);
 }
 
-function timeToKey(time: number): string {
-  return new Date(time).toISOString().slice(0, 10);
-}
-
-export function shiftDateKey(dateKey: string, days: number): string {
-  return timeToKey(keyToTime(dateKey) + days * DAY_MS);
-}
-
-export function daysBetween(fromKey: string, toKey: string): number {
-  return Math.round((keyToTime(toKey) - keyToTime(fromKey)) / DAY_MS);
-}
-
 function weekdayShort(dateKey: string): string {
   return new Date(keyToTime(dateKey)).toLocaleString("en-US", { weekday: "short", timeZone: "UTC" });
-}
-
-/**
- * The calendar day of a timestamp for a viewer whose clock is `utcOffsetMinutes`
- * behind UTC (the value of Date.getTimezoneOffset). Day keys are local days, so
- * a plan saved late in the evening must start on the viewer's own date.
- */
-function isoToKey(iso: string, utcOffsetMinutes: number) {
-  return timeToKey(Date.parse(iso) - utcOffsetMinutes * 60_000);
 }
 
 function pluralize(count: number, word: string) {
@@ -146,25 +135,9 @@ function buildToday(report: DashboardReport | null, progress: DashboardProgressR
   };
 }
 
-/** Older plans have no stored schedule; the workspace shows five working days then two of rest. */
-function scheduleDays(report: DashboardReport) {
-  const plan = report.plan;
-  if (!plan) return [];
-  if (plan.schedule?.days.length) {
-    return [...plan.schedule.days].sort((left, right) => left.dayOffset - right.dayOffset);
-  }
-  const phase = plan.phases[0];
-  return Array.from({ length: 7 }, (_, dayOffset) => ({
-    dayOffset,
-    status: dayOffset === 0 ? ("active" as const) : dayOffset > 4 ? ("rest" as const) : ("upcoming" as const),
-    focus: dayOffset > 4 ? "Recovery" : (phase?.phase ?? "Baseline"),
-    tagline: "",
-  }));
-}
-
 function buildWeek(report: DashboardReport | null, today: DashboardModel["today"], todayKey: string): WeekDay[] {
   if (!report?.plan || report.escalation) return [];
-  return scheduleDays(report).map((day) => {
+  return baseScheduleDays(report.plan).map((day) => {
     const dateKey = shiftDateKey(todayKey, day.dayOffset);
     let state: WeekDay["state"];
     if (day.dayOffset === 0) {
@@ -223,7 +196,9 @@ function buildAdherence(
     return { dateKey, state };
   });
 
-  const startKey = report ? isoToKey(report.planCreatedAt ?? report.createdAt, utcOffsetMinutes) : null;
+  const startKey = report
+    ? (report.plan?.startDateKey ?? isoToDateKey(report.planCreatedAt ?? report.createdAt, utcOffsetMinutes))
+    : null;
   return {
     completedSessions: completedKeys.size,
     stoppedSessions: stoppedKeys.size,
@@ -415,7 +390,7 @@ function buildProgram(report: DashboardReport | null, todayKey: string, utcOffse
   if (!report.plan) return { state: "intake", ...empty, startedOn: report.createdAt };
 
   const duration = report.plan.durationMonths;
-  const startKey = isoToKey(report.planCreatedAt ?? report.createdAt, utcOffsetMinutes);
+  const startKey = report.plan.startDateKey ?? isoToDateKey(report.planCreatedAt ?? report.createdAt, utcOffsetMinutes);
   const elapsed = Math.max(0, daysBetween(startKey, todayKey));
   const month = Math.min(duration, Math.floor(elapsed / DAYS_PER_MONTH) + 1);
   const phase = report.plan.phases[month - 1];
@@ -455,7 +430,20 @@ export function buildDashboardModel(
   /** Date.getTimezoneOffset() of the viewer; 0 means UTC. */
   utcOffsetMinutes = 0,
 ): DashboardModel {
-  const report = activeReport(snapshot);
+  const latest = activeReport(snapshot);
+  // Bring the plan up to the calendar the same way the Rehab Studio does, so a
+  // missed day shows here at once. Saving happens when the studio opens.
+  const reconciled =
+    latest?.plan && !latest.escalation
+      ? reconcileSchedule(
+          latest.plan,
+          snapshot.progress,
+          todayKey,
+          isoToDateKey(latest.planCreatedAt ?? latest.createdAt, utcOffsetMinutes),
+        )
+      : null;
+  const report = latest && reconciled ? { ...latest, plan: reconciled.plan } : latest;
+  const notice = activeSkipNotice(report?.plan);
   const program = buildProgram(report, todayKey, utcOffsetMinutes);
   const today = buildToday(report, snapshot.progress, todayKey);
 
@@ -474,6 +462,7 @@ export function buildDashboardModel(
     firstName: snapshot.user.name.trim().split(/\s+/)[0] || "there",
     hasAnyIntake: snapshot.reports.length > 0,
     program,
+    skipNotice: notice ? describeSkipNotice(notice) : null,
     primaryAction: buildPrimaryAction(program, today),
     condition,
     escalation: report?.escalation ?? null,

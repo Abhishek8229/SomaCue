@@ -206,6 +206,76 @@ input {
   }
 }
 
+/* Joint angle pills over the 3D stage. Positioned by the render loop with transform only. */
+/* The stage's own view and overlay buttons stay small so they do not cover the figure.
+   (The global control font reset is unlayered and would otherwise win over text utilities.) */
+.stage-control {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.stage-angle-layer[data-hidden],
+.stage-angle-leaders[data-hidden] {
+  display: none;
+}
+
+.stage-angle-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px 0 7px;
+  border: 1px solid color-mix(in oklab, var(--stage-accent) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--stage-bg) 90%, transparent);
+  box-shadow: 0 2px 10px oklch(4% 0.01 200 / 0.45);
+  color: var(--stage-ink);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.stage-angle-pill[data-compact="true"] {
+  height: 22px;
+  gap: 4px;
+  padding: 0 7px 0 6px;
+  font-size: 11px;
+}
+
+.stage-angle-side {
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--stage-accent) 18%, transparent);
+  color: var(--stage-accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.stage-angle-sep {
+  color: var(--stage-muted);
+}
+
+/* Fixed width so the pill does not change size as the number changes. */
+.stage-angle-deg {
+  min-width: 3.4ch;
+  color: var(--stage-accent);
+  font-family: var(--font-outlier);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.stage-angle-leader {
+  stroke: color-mix(in oklab, var(--stage-accent) 60%, transparent);
+  stroke-width: 1;
+}
+
 /* AI analysis wait screen (diagnostic triage and treatment synthesis). */
 .analysis-card {
   --analysis-mint: oklch(86% 0.13 165);

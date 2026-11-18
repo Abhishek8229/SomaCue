@@ -59,7 +59,7 @@ function report(overrides: Partial<DashboardReport> = {}): DashboardReport {
     careReason: null,
     escalation: null,
     plan: PLAN,
-    planCreatedAt: "2026-11-10T09:30:00.000Z",
+    planCreatedAt: "2026-11-18T03:30:00.000Z",
     hasQuiz: true,
     ...overrides,
   };
@@ -142,7 +142,7 @@ describe("an active plan without any check-ins yet", () => {
       durationMonths: 3,
       month: 1,
       phaseName: "Calm and mobilise",
-      dayNumber: 9,
+      dayNumber: 1,
     });
     expect(model.primaryAction.label).toBe("Continue Today's Session");
   });
@@ -171,7 +171,8 @@ describe("an active plan without any check-ins yet", () => {
   });
 
   it("shows no streak or trend until sessions exist", () => {
-    expect(model.adherence).toMatchObject({ completedSessions: 0, currentStreak: 0, bestStreak: 0 });
+    expect(model.adherence).toMatchObject({ completedSessions: 0, currentStreak: 0, bestStreak: 0, daysSinceStart: 0 });
+    expect(model.skipNotice).toBeNull();
     expect(model.trend.points).toEqual([]);
     expect(model.guardrail.state).toBe("standard");
     expect(model.guardrail.meters.map((meter) => meter.value)).toEqual([0, 0]);
@@ -405,5 +406,65 @@ describe("viewer time zone", () => {
     const early = snapshot({ reports: [report({ planCreatedAt: "2026-11-18T02:00:00.000Z" })] });
     expect(buildDashboardModel(early, TODAY, 300).program.dayNumber).toBe(2);
     expect(buildDashboardModel(early, TODAY, 0).program.dayNumber).toBe(1);
+  });
+});
+
+describe("syncing to the calendar", () => {
+  const startedYesterday = (progress: DashboardProgressRow[] = []) =>
+    snapshot({ reports: [report({ planCreatedAt: "2026-11-17T09:00:00.000Z" })], progress });
+
+  it("counts the analysis day as Day 1 and today as the next day", () => {
+    const model = buildDashboardModel(startedYesterday([row("2026-11-17", { completedExercises: ["Supine Pelvic Tilt"] })]), TODAY);
+    expect(model.program.dayNumber).toBe(2);
+    expect(model.adherence.daysSinceStart).toBe(1);
+    expect(model.skipNotice).toBeNull();
+    // Day 1 was worked, so today is the next day of the plan.
+    expect(model.today.focus).toBe("Control");
+  });
+
+  it("alerts that the day was skipped and repeats the missed session today", () => {
+    const model = buildDashboardModel(startedYesterday(), TODAY);
+    expect(model.program.dayNumber).toBe(2);
+    expect(model.skipNotice).toEqual({
+      title: "You skipped Nov 17",
+      body: "No exercises were logged. Your plan moved forward one day, so today repeats the session you missed.",
+    });
+    expect(model.today.focus).toBe("Mobility");
+    expect(model.today.status).toBe("pending");
+    expect(model.week.map((day) => day.focus)).toEqual([
+      "Mobility",
+      "Control",
+      "Control",
+      "Recovery",
+      "Control",
+      "Control",
+      "Recovery",
+    ]);
+    expect(model.week[0]).toMatchObject({ dateKey: TODAY, state: "today" });
+  });
+
+  it("does not show the alert once it has been dismissed", () => {
+    const dismissed = report({
+      planCreatedAt: "2026-11-17T09:00:00.000Z",
+      plan: {
+        ...PLAN,
+        startDateKey: "2026-11-17",
+        scheduleAnchor: TODAY,
+        skipNotice: { dateKeys: ["2026-11-17"], shiftedDays: 1, noticedOn: TODAY, dismissed: true },
+      },
+    });
+    expect(buildDashboardModel(snapshot({ reports: [dismissed] }), TODAY).skipNotice).toBeNull();
+  });
+
+  it("treats a stopped session as attempted, not skipped", () => {
+    const model = buildDashboardModel(startedYesterday([row("2026-11-17", { stopped: true })]), TODAY);
+    expect(model.skipNotice).toBeNull();
+  });
+
+  it("shows no alert for a new patient or an escalated case", () => {
+    expect(buildDashboardModel(snapshot({ reports: [] }), TODAY).skipNotice).toBeNull();
+    const escalation: Escalation = { kind: "progress", reason: "r", evidence: [], escalatedAt: "2026-11-17T10:00:00.000Z" };
+    const locked = snapshot({ reports: [report({ planCreatedAt: "2026-11-10T09:00:00.000Z", escalation })] });
+    expect(buildDashboardModel(locked, TODAY).skipNotice).toBeNull();
   });
 });

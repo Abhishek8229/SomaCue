@@ -16,6 +16,16 @@ export type ScheduleWithSteps = {
   horizonDays: number;
   days: ScheduleDayWithSteps[];
 };
+/** Shown once when days passed with no exercise done. */
+export type SkipNotice = {
+  /** The skipped working days, oldest first. */
+  dateKeys: string[];
+  /** How many days the plan moved forward to repeat the missed sessions. */
+  shiftedDays: number;
+  /** The local date the skip was noticed on. */
+  noticedOn: string;
+  dismissed: boolean;
+};
 export type RescheduledSchedule = {
   horizonDays: number;
   days: Array<TreatmentPlan["schedule"]["days"][number] & { steps: ExerciseStep[] }>;
@@ -23,6 +33,13 @@ export type RescheduledSchedule = {
 /** A routine as stored in the database. Older routines have no schedule or per-day steps. */
 export type StoredTreatmentPlan = Omit<TreatmentPlan, "schedule"> & {
   schedule?: ScheduleWithSteps;
+  /** Local date of Day 1, the day the analysis was run. */
+  startDateKey?: string;
+  /** Local date that the schedule's dayOffset 0 stands for. */
+  scheduleAnchor?: string;
+  /** Working days that passed with no exercise done, for the history. */
+  skippedDays?: string[];
+  skipNotice?: SkipNotice | null;
   /**
    * The schedule days after today as they were before each "More discomfort"
    * reschedule, keyed by the date of that session. Reset restores from here.

@@ -155,6 +155,7 @@ export default async function WorkspacePage({
   return (
     <WorkspaceClient
       userName={user.name}
+      planCreatedAt={routine ? (latestReport?.treatmentPlan?.createdAt.toISOString() ?? null) : null}
       hasActivePlan={routine !== null}
       initialProgress={initialProgress}
       initialCondition={initialCondition}

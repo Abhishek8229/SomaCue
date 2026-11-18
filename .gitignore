@@ -14,3 +14,9 @@ apps/web/public/models/
 *.log
 .tmp-*/
 apps/web/.hallmark/
+
+# Local AI-assistant skill installs and settings
+.agents/
+.claude/
+.kiro/
+skills-lock.json

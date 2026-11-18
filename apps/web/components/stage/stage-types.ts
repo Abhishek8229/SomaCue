@@ -20,6 +20,16 @@ export type StageHud = {
   stepKey: string;
   /** guided pace: the step the figure is waiting to perform, or null */
   waitingStep: string | null;
+  /** live joint angles of the 3D model, one per label (empty while stopped) */
+  angles?: StageAngle[];
+};
+
+export type StageAngle = {
+  key: string;
+  side: "L" | "R" | "L+R" | null;
+  name: string;
+  short: string;
+  degrees: number;
 };
 
 export type StageViewCommand = { id: number; view: 0 | 1 };

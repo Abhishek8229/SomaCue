@@ -18,6 +18,7 @@ import { regionCapsule } from "@/lib/kinematics/regions";
 import { createBodyRig } from "@/lib/kinematics/rig";
 import { seatHeight } from "@/lib/kinematics/solver";
 import type { Region } from "@/lib/kinematics/vocabulary";
+import { AngleOverlay, type OverlayInsets } from "./angle-overlay";
 import { createBodyMaterial, MAX_GLOWS, writeGlows, type GlowEntry } from "./body-material";
 import type { StageGlow, StageHud, StageStatus, StageViewCommand } from "./stage-types";
 
@@ -37,7 +38,13 @@ export type StageCanvasProps = {
   onStatus: (status: StageStatus) => void;
   onHud: (hud: StageHud) => void;
   onFinished: () => void;
+  /** joint angle protractors and pills (on by default) */
+  showAngles?: boolean;
+  /** space at the top and bottom of the stage kept clear of angle pills, in px */
+  angleInsets?: OverlayInsets;
 };
+
+type LabelLayer = { layer: RefObject<HTMLDivElement | null>; svg: RefObject<SVGSVGElement | null> };
 
 class SceneBoundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
   state = { failed: false };
@@ -82,7 +89,7 @@ const GLOW_COLORS = {
   flagged: new Color("#fbbf24").multiplyScalar(0.35),
 };
 
-type Props = Omit<StageCanvasProps, "onStatus"> & { template: Object3D; palette: StagePalette };
+type Props = Omit<StageCanvasProps, "onStatus"> & { template: Object3D; palette: StagePalette; labels: LabelLayer };
 
 function StageScene({
   template,
@@ -99,6 +106,9 @@ function StageScene({
   release,
   onHud,
   onFinished,
+  showAngles = true,
+  angleInsets,
+  labels,
 }: Props) {
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
@@ -116,6 +126,25 @@ function StageScene({
   }, [template, palette]);
 
   useEffect(() => () => material.dispose(), [material]);
+
+  const overlay = useMemo(
+    () => new AngleOverlay({ accent: palette.accent, ink: palette.ink, muted: palette.muted }),
+    [palette],
+  );
+  useEffect(() => {
+    overlay.attach(labels.layer.current, labels.svg.current);
+    return () => {
+      overlay.attach(null, null);
+      overlay.dispose();
+    };
+  }, [overlay, labels]);
+  const showAnglesRef = useRef(showAngles);
+  const insetsRef = useRef<OverlayInsets>(angleInsets ?? { top: 0, bottom: 0 });
+  useEffect(() => {
+    showAnglesRef.current = showAngles;
+    insetsRef.current = angleInsets ?? { top: 0, bottom: 0 };
+    invalidate();
+  }, [showAngles, angleInsets, invalidate]);
 
   const posture = spec?.posture ?? "standing";
   const cameraGoal = useRef<{ position: Vector3; target: Vector3 } | null>(null);
@@ -193,11 +222,12 @@ function StageScene({
     invalidate();
   }, [engine, release, invalidate]);
 
+  // Frames on mount, and again whenever the stage changes size (a docked HUD on
+  // narrow screens, a rotated phone), unless the user has moved the camera themselves.
   useEffect(() => {
-    frameCamera(true);
-    // Frame once on mount.
+    if (!userControl.current) frameCamera(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [size.width, size.height]);
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
@@ -219,6 +249,16 @@ function StageScene({
       glows.push({ ...regionCapsule(engine.rig, entry.region), color: entry.color });
     }
     writeGlows(uniforms, glows);
+
+    // Joint angles are read from the pose just solved, so they follow speed, pause and seeking.
+    overlay.readBody(engine);
+    overlay.update({
+      engine,
+      camera,
+      size,
+      enabled: showAnglesRef.current && !stopped,
+      insets: insetsRef.current,
+    });
 
     const goal = cameraGoal.current;
     const controls = controlsRef.current;
@@ -249,6 +289,7 @@ function StageScene({
         mirrored: frame.sample.mirrored,
         stepKey: frame.sample.stepKey,
         waitingStep: frame.waitingStep,
+        angles: stopped ? [] : overlay.summary,
       });
     }
     if (frame.sample?.done && !finishedRef.current) {
@@ -275,6 +316,7 @@ function StageScene({
       <directionalLight position={[2.4, 1.2, -3.2]} intensity={0.25} color={palette.accent} />
 
       <primitive object={engine.rig.root} />
+      <primitive object={overlay.group} />
 
       <StageFloor palette={palette} />
       <Grid
@@ -418,6 +460,9 @@ function Stool({ height, palette }: { height: number; palette: StagePalette }) {
 
 function StageCanvas({ onStatus, ...props }: StageCanvasProps) {
   const [template, setTemplate] = useState<Object3D | null>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const labels = useMemo<LabelLayer>(() => ({ layer: layerRef, svg: svgRef }), []);
   const [palette] = useState<StagePalette>(() => readStagePalette());
   const mountedRef = useRef(true);
 
@@ -449,6 +494,7 @@ function StageCanvas({ onStatus, ...props }: StageCanvasProps) {
 
   return (
     <SceneBoundary onError={() => onStatus("error")}>
+      <div className="relative h-full w-full">
       <Canvas
         camera={{ fov: CAMERA_FOV_DEG, near: 0.05, far: 60, position: [1, 1.4, 4] }}
         dpr={[1, 1.5]}
@@ -467,11 +513,25 @@ function StageCanvas({ onStatus, ...props }: StageCanvasProps) {
         }}
       >
         {template ? (
-          <StageScene template={template} palette={palette} {...props} />
+          <StageScene template={template} palette={palette} labels={labels} {...props} />
         ) : (
           <color attach="background" args={[palette.bg]} />
         )}
       </Canvas>
+      {/* Joint angle pills and their leader lines, positioned by the render loop. */}
+      <svg
+        aria-hidden="true"
+        className="stage-angle-leaders pointer-events-none absolute inset-0 h-full w-full"
+        data-hidden={props.showAngles === false || undefined}
+        ref={svgRef}
+      />
+      <div
+        aria-hidden="true"
+        className="stage-angle-layer pointer-events-none absolute inset-0 overflow-hidden"
+        data-hidden={props.showAngles === false || undefined}
+        ref={layerRef}
+      />
+      </div>
     </SceneBoundary>
   );
 }

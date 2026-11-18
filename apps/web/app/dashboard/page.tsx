@@ -12,6 +12,5 @@ export default async function DashboardPage() {
 
   const snapshot = await getDashboardSnapshot(user);
 
-  // The server renders in UTC; the browser swaps in its own local day after the first render.
-  return <DashboardView serverTodayKey={new Date().toISOString().slice(0, 10)} snapshot={snapshot} />;
+  return <DashboardView snapshot={snapshot} />;
 }

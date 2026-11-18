@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { BookOpen, Volume2 } from "lucide-react";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CubeIcon, TextIcon } from "@/components/workspace/icons";
 import { CLINICAL_RANGES_REVIEWED } from "@/lib/kinematics/joint-table";
 import { describeSpec, type StageExercise } from "@/lib/kinematics/exercise";
@@ -11,7 +11,7 @@ import { defaultView, viewDescription, viewLabels } from "@/lib/kinematics/camer
 import { PHASE_LABELS } from "@/lib/kinematics/timeline";
 import { POSTURE_LABELS } from "@/lib/kinematics/vocabulary";
 import { usePrefersReducedMotion, useWebGLSupport } from "@/lib/use-environment";
-import type { StageGlow, StageHud, StageStatus } from "./stage-types";
+import type { StageAngle, StageGlow, StageHud, StageStatus } from "./stage-types";
 import { SafetyNotice } from "./SafetyNotice";
 import { useStageSpeech } from "./useStageSpeech";
 import { speechEnabled, type StageAction, type StageState } from "./useStageController";
@@ -45,6 +45,54 @@ export const StageV2 = memo(function StageV2({
   const [status, setStatus] = useState<StageStatus>("loading");
   const [textMode, setTextMode] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const [showAngles, setShowAngles] = useState(true);
+  // Keep the angle pills clear of the controls and readout that sit over the canvas.
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const readoutRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const [bottomInset, setBottomInset] = useState(72);
+  // On a narrow stage the readout has no room beside the controls. The two then dock
+  // together in a band under the 3D view, so neither ever covers the figure.
+  const [hudLayout, setHudLayout] = useState<HudLayout>(FLOATING_HUD);
+  useEffect(() => {
+    const measure = () => {
+      const panel = panelRef.current;
+      const controls = controlsRef.current;
+      const readout = readoutRef.current;
+      const controlsHeight = controls?.offsetHeight ?? 0;
+      const readoutHeight = readout?.offsetHeight ?? 0;
+      // Only the panel and the controls decide the layout, never the readout's own width,
+      // so the choice cannot flip back and forth as the readout's text changes.
+      const free = panel && controls ? panel.clientWidth - HUD_EDGE_LEFT - HUD_EDGE_RIGHT - controls.offsetWidth - HUD_GAP : Infinity;
+      const docked = free < READOUT_MIN_WIDTH;
+      const next: HudLayout = {
+        docked,
+        controlsHeight,
+        readoutHeight,
+        readoutWidth: docked || !Number.isFinite(free) ? null : Math.floor(free),
+      };
+      setHudLayout((previous) =>
+        previous.docked === next.docked &&
+        previous.controlsHeight === next.controlsHeight &&
+        previous.readoutHeight === next.readoutHeight &&
+        previous.readoutWidth === next.readoutWidth
+          ? previous
+          : next,
+      );
+      // Docked, the canvas already ends above the band; floating, the pills keep clear of both blocks.
+      setBottomInset(docked ? DOCKED_PILL_INSET : Math.max(controlsHeight, readoutHeight) + 24);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    for (const element of [panelRef.current, controlsRef.current, readoutRef.current]) if (element) observer.observe(element);
+    return () => observer.disconnect();
+  });
+  const docked = hudLayout.docked;
+  const dockHeight = docked
+    ? HUD_DOCK_PAD + hudLayout.controlsHeight + HUD_STACK_GAP + hudLayout.readoutHeight + HUD_DOCK_TOP
+    : 0;
+  const angleInsets = useMemo(() => ({ top: 0, bottom: bottomInset }), [bottomInset]);
   const exercise = exercises[state.index] ?? null;
   const spec = exercise?.spec ?? null;
   const posture = spec?.posture ?? "standing";
@@ -87,10 +135,12 @@ export const StageV2 = memo(function StageV2({
       aria-label="3D movement stage"
       className={`workspace-stage ${planUnlocked ? "col-span-6" : "col-span-9"} relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/20 bg-zinc-900 ${!reportsSubmitted ? "grayscale-[35%]" : ""}`}
       data-stage-panel
+      ref={panelRef}
     >
       {canInteract && !staticMode && webgl === "available" ? (
-        // The canvas starts below the caption band, so text never covers the figure.
-        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-[7.75rem]">
+        // The canvas starts below the caption band, so text never covers the figure,
+        // and on a narrow stage it ends above the docked controls.
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 top-[7.75rem]" style={docked ? { bottom: dockHeight } : undefined}>
           <StageCanvas
             exerciseKey={`${state.index}-${state.restartKey}-${retryKey}`}
             glow={{ ...glow, active: [] }}
@@ -100,6 +150,8 @@ export const StageV2 = memo(function StageV2({
             onStatus={handleStatus}
             playing={state.playing}
             reducedMotion={reducedMotion}
+            showAngles={showAngles}
+            angleInsets={angleInsets}
             guided={state.pace === "guided"}
             release={state.release}
             spec={spec}
@@ -128,33 +180,62 @@ export const StageV2 = memo(function StageV2({
         </div>
       ) : null}
 
+      {docked ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[9] border-t border-white/10 bg-zinc-950/60"
+          style={{ height: dockHeight }}
+        />
+      ) : null}
+
       {canInteract && exercise ? (
-        <div className="pointer-events-none absolute bottom-5 right-5 z-10 max-w-[60%] text-right">
-          <p className="text-[10px] text-white/55">
-            SomaCue stage / {dayLabel} · {state.index + 1} of {exercises.length}
-          </p>
-          <p className="mt-1 truncate text-sm text-white/90">{exercise.name}</p>
-          <p className="mt-1 text-[10px] text-white/55" aria-live="polite">
-            {state.stopped
-              ? "Stopped. Resting safely."
-              : hud?.phase
-                ? `${PHASE_LABELS[hud.phase]} · rep ${hud.rep} of ${spec?.reps ?? 0}`
-                : spec
-                  ? "Press play to start"
-                  : "No motion available, see the description"}
-          </p>
-          {exercise.source === "reference" ? (
-            <p className="mt-1 text-[9px] text-white/35">Shown with a reference demonstration</p>
+        <div
+          className={`pointer-events-none absolute z-10 ${docked ? "left-3 right-3 text-left" : "bottom-5 right-5 max-w-[60%] text-right"}`}
+          ref={readoutRef}
+          style={
+            docked
+              ? { bottom: HUD_DOCK_PAD + hudLayout.controlsHeight + HUD_STACK_GAP }
+              : hudLayout.readoutWidth !== null
+                ? { maxWidth: `min(60%, ${hudLayout.readoutWidth}px)` }
+                : undefined
+          }
+        >
+          {docked ? (
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="min-w-0 truncate text-sm text-white/90">{exercise.name}</p>
+              <p className="shrink-0 text-[11px] text-white/55" aria-live="polite">
+                {hudStatus(state.stopped, hud, spec)}
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-[10px] text-white/55">
+                SomaCue stage / {dayLabel} · {state.index + 1} of {exercises.length}
+              </p>
+              <p className="mt-1 truncate text-sm text-white/90">{exercise.name}</p>
+              <p className="mt-1 text-[10px] text-white/55" aria-live="polite">
+                {hudStatus(state.stopped, hud, spec)}
+              </p>
+              {exercise.source === "reference" ? (
+                <p className="mt-1 text-[9px] text-white/35">Shown with a reference demonstration</p>
+              ) : null}
+            </>
+          )}
+          {showAngles && !staticMode && !state.stopped && hud?.angles?.length ? (
+            docked ? <AngleStrip angles={hud.angles} /> : <AngleReadout angles={hud.angles} />
           ) : null}
         </div>
       ) : null}
 
       {canInteract ? (
-        <div className="absolute bottom-4 left-4 z-10 flex flex-wrap items-center gap-2">
+        <div
+          className={`absolute z-10 flex flex-wrap items-center gap-2 ${docked ? "bottom-3 left-3 max-w-[calc(100%-1.5rem)]" : "bottom-4 left-4 max-w-[calc(100%-2rem)]"}`}
+          ref={controlsRef}
+        >
           {labels.map((label, view) => (
             <button
               aria-pressed={activeView === view}
-              className={`${interactive} rounded-lg border px-3 py-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-35 ${
+              className={`${interactive} stage-control rounded-lg border px-3 py-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-35 ${
                 activeView === view
                   ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-100"
                   : "border-white/15 bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
@@ -170,12 +251,29 @@ export const StageV2 = memo(function StageV2({
           {webgl === "available" ? (
             <button
               aria-pressed={textMode}
-              className={`${interactive} flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-[10px] text-white/70 hover:bg-white/20 hover:text-white`}
+              className={`${interactive} stage-control flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-[10px] text-white/70 hover:bg-white/20 hover:text-white`}
               onClick={() => setTextMode((value) => !value)}
               type="button"
             >
               {textMode ? <CubeIcon size={12} /> : <TextIcon size={12} />}
               {textMode ? "3D view" : "Text view"}
+            </button>
+          ) : null}
+          {webgl === "available" ? (
+            <button
+              aria-pressed={showAngles}
+              className={`${interactive} stage-control flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[10px] disabled:cursor-not-allowed disabled:opacity-35 ${
+                showAngles
+                  ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-100"
+                  : "border-white/15 bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
+              }`}
+              disabled={staticMode}
+              onClick={() => setShowAngles((value) => !value)}
+              title="Show the joint angles of the 3D reference model"
+              type="button"
+            >
+              <AngleIcon />
+              Angles
             </button>
           ) : null}
           {!CLINICAL_RANGES_REVIEWED ? (
@@ -335,6 +433,87 @@ function StageCaption({
       {instruction.detail ? (
         <p className="mt-1 max-w-2xl truncate text-[11px] text-white/55">{instruction.detail}</p>
       ) : null}
+    </div>
+  );
+}
+
+function AngleIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="12" viewBox="0 0 24 24" width="12">
+      <path d="M4 20h16M4 20 16 6" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+      <path d="M11 20a7 7 0 0 0-2.1-5" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
+const READOUT_ROWS = 4;
+/** Offsets of the floating controls (left-4) and readout (right-5) from the panel edge, in px. */
+const HUD_EDGE_LEFT = 16;
+const HUD_EDGE_RIGHT = 20;
+/** Space between the controls and the readout when they sit side by side. */
+const HUD_GAP = 12;
+/** Narrowest the readout may be beside the controls before both dock under the 3D view. */
+const READOUT_MIN_WIDTH = 190;
+/** The docked band: bottom padding (bottom-3), gap above the controls, padding above the readout. */
+const HUD_DOCK_PAD = 12;
+const HUD_STACK_GAP = 8;
+const HUD_DOCK_TOP = 10;
+/** Docked, the canvas ends above the band, so the pills only need a small margin. */
+const DOCKED_PILL_INSET = 8;
+/** Angles shown inline in the docked band; the rest are on the figure. */
+const STRIP_ITEMS = 2;
+
+type HudLayout = { docked: boolean; controlsHeight: number; readoutHeight: number; readoutWidth: number | null };
+const FLOATING_HUD: HudLayout = { docked: false, controlsHeight: 0, readoutHeight: 0, readoutWidth: null };
+
+function hudStatus(stopped: boolean, hud: StageHud | null, spec: { reps: number } | null) {
+  if (stopped) return "Stopped. Resting safely.";
+  if (hud?.phase) return `${PHASE_LABELS[hud.phase]} · rep ${hud.rep} of ${spec?.reps ?? 0}`;
+  return spec ? "Press play to start" : "No motion available, see the description";
+}
+
+/** One line of live joint angles for the docked band on narrow stages. */
+function AngleStrip({ angles }: { angles: StageAngle[] }) {
+  const shown = angles.slice(0, STRIP_ITEMS);
+  const more = angles.length - shown.length;
+  return (
+    <div className="mt-1.5 flex items-baseline gap-3 overflow-hidden whitespace-nowrap text-[11px]">
+      <span className="shrink-0 text-[10px] text-white/45">3D model</span>
+      <dl className="flex min-w-0 items-baseline gap-3">
+        {shown.map((angle) => (
+          <div className="flex min-w-0 items-baseline gap-1.5" key={`${angle.key}-${angle.name}`}>
+            <dt className="min-w-0 truncate text-white/75">
+              {angle.side ? <span className="mr-1 font-semibold text-emerald-300">{angle.side}</span> : null}
+              {angle.short}
+            </dt>
+            <dd className="shrink-0 font-mono font-semibold tabular-nums text-emerald-200">{angle.degrees}°</dd>
+          </div>
+        ))}
+      </dl>
+      {more > 0 ? <span className="shrink-0 text-[10px] text-white/45">+{more} more</span> : null}
+    </div>
+  );
+}
+
+/** Compact list of the live joint angles, measured on the 3D reference model. */
+function AngleReadout({ angles }: { angles: StageAngle[] }) {
+  const shown = angles.slice(0, READOUT_ROWS);
+  const more = angles.length - shown.length;
+  return (
+    <div className="mt-2 inline-block rounded-lg border border-white/10 bg-zinc-950/70 px-2.5 py-1.5 text-left">
+      <p className="text-[9px] text-white/45">Joint angles, 3D reference model</p>
+      <dl className="mt-1 space-y-0.5">
+        {shown.map((angle) => (
+          <div className="flex items-baseline justify-between gap-3 text-[10px]" key={`${angle.key}-${angle.name}`}>
+            <dt className="truncate text-white/75">
+              {angle.side ? <span className="mr-1 font-semibold text-emerald-300">{angle.side}</span> : null}
+              {angle.short}
+            </dt>
+            <dd className="font-mono font-semibold tabular-nums text-emerald-200">{angle.degrees}°</dd>
+          </div>
+        ))}
+      </dl>
+      {more > 0 ? <p className="mt-0.5 text-[9px] text-white/45">+{more} more on the figure</p> : null}
     </div>
   );
 }

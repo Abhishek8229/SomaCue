@@ -2,26 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 import { buildDashboardModel } from "@/lib/dashboard/model";
 import type { DashboardModel, DashboardSnapshot, GuardrailMeter } from "@/lib/dashboard/types";
-import { toDateKey } from "@/lib/progress/dailyProgress";
+import { useLocalToday, useLocalUtcOffset } from "@/lib/use-today";
 import { LocalDate } from "./LocalDate";
 import { ArrowRight, Shield } from "./icons";
 import { AdherencePanel, ConditionPanel, HistoryPanel, RecordsPanel, TodayPanel, TrendPanel } from "./panels";
 import styles from "./dashboard.module.css";
-
-const subscribe = () => () => {};
-
-/** Minutes the viewer's clock is behind UTC. The server render assumes UTC so both renders agree first. */
-function useUtcOffset() {
-  return useSyncExternalStore(subscribe, () => new Date().getTimezoneOffset(), () => 0);
-}
-
-/** The viewer's local calendar day. Matches the server's day on first render, then follows the browser. */
-function useTodayKey(serverKey: string) {
-  return useSyncExternalStore(subscribe, () => toDateKey(new Date()), () => serverKey);
-}
 
 function programContext(program: DashboardModel["program"]) {
   switch (program.state) {
@@ -152,9 +140,10 @@ function Welcome({ model }: { model: DashboardModel }) {
   );
 }
 
-export function DashboardView({ snapshot, serverTodayKey }: { snapshot: DashboardSnapshot; serverTodayKey: string }) {
-  const todayKey = useTodayKey(serverTodayKey);
-  const utcOffset = useUtcOffset();
+export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
+  // Today follows the device clock, in the viewer's own time zone.
+  const todayKey = useLocalToday();
+  const utcOffset = useLocalUtcOffset();
   const model = useMemo(() => buildDashboardModel(snapshot, todayKey, utcOffset), [snapshot, todayKey, utcOffset]);
 
   return (
@@ -180,6 +169,12 @@ export function DashboardView({ snapshot, serverTodayKey }: { snapshot: Dashboar
 
         {model.hasAnyIntake ? (
           <>
+            {model.skipNotice ? (
+              <section aria-label="Skipped day" className={styles.skip} role="status">
+                <h2 className={styles.skipTitle}>{model.skipNotice.title}</h2>
+                <p className={styles.skipBody}>{model.skipNotice.body}</p>
+              </section>
+            ) : null}
             <GuardrailBand model={model} />
             <div className={`${styles.row} ${styles.rowTodayCondition}`}>
               <TodayPanel model={model} />

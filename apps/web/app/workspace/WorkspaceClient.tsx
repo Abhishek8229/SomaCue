@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import { completeTriageQuiz } from "@/actions/intake";
 import {
+  dismissSkipNotice,
   resetDailyProgress,
   submitDailyFeedback,
+  syncSchedule,
   toggleExerciseCompletion,
 } from "@/actions/dailyProgress";
 import { reportPainEvent, reschedulePainEvent } from "@/actions/painEvent";
@@ -40,7 +42,15 @@ import {
   type FeedbackSubmission,
 } from "@/lib/progress/dailyProgress";
 import type { PainContext } from "@/lib/progress/painEvent";
+import {
+  activeSkipNotice,
+  daysBetween,
+  describeSkipNotice,
+  isoToDateKey,
+  reconcileSchedule,
+} from "@/lib/progress/schedule";
 import { usePrefersReducedMotion } from "@/lib/use-environment";
+import { useLocalToday, useLocalUtcOffset } from "@/lib/use-today";
 import {
   QuizModal,
   SidebarIntake,
@@ -84,7 +94,13 @@ function createFallbackSchedule(plan: TreatmentPlanPayload): TreatmentScheduleDa
   }));
 }
 
-function createRollingDays(plan: TreatmentPlanPayload | null): RollingDay[] {
+/** A YYYY-MM-DD key as a local midnight date. */
+function dateFromKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function createRollingDays(plan: TreatmentPlanPayload | null, anchorKey: string): RollingDay[] {
   if (!plan) {
     return [];
   }
@@ -92,7 +108,7 @@ function createRollingDays(plan: TreatmentPlanPayload | null): RollingDay[] {
   const schedule = [...(plan.schedule?.days ?? createFallbackSchedule(plan))].sort(
     (left, right) => left.dayOffset - right.dayOffset,
   );
-  const start = new Date();
+  const start = dateFromKey(anchorKey);
 
   return schedule.map((scheduledDay) => {
     const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + scheduledDay.dayOffset);
@@ -107,12 +123,12 @@ function createRollingDays(plan: TreatmentPlanPayload | null): RollingDay[] {
   });
 }
 
-function createJourneyMonths(plan: TreatmentPlanPayload | null): JourneyMonth[] {
+function createJourneyMonths(plan: TreatmentPlanPayload | null, startKey: string): JourneyMonth[] {
   if (!plan) {
     return [];
   }
 
-  const start = new Date();
+  const start = dateFromKey(startKey);
   return plan.phases.map((phase, index) => {
     const date = new Date(start.getFullYear(), start.getMonth() + index, 1);
     return {
@@ -172,11 +188,14 @@ export default function WorkspacePage({
   initialIntake = null,
   initialProgress = [],
   initialQuiz,
+  planCreatedAt = null,
   reportId,
   routine,
   userName,
 }: {
   userName?: string;
+  /** ISO time the saved plan was created, which is when Day 1 began. */
+  planCreatedAt?: string | null;
   hasActivePlan: boolean;
   initialCondition?: DetectedCondition | null;
   initialEscalation?: Escalation | null;
@@ -186,6 +205,7 @@ export default function WorkspacePage({
   reportId: string | null;
   routine: TreatmentPlanPayload | null;
 }) {
+  const todayKey = useLocalToday();
   const [selectedDayOffset, setSelectedDayOffset] = useState(0);
   const currentMonth = new Date();
   const [calendarMonth, setCalendarMonth] = useState(
@@ -207,7 +227,7 @@ export default function WorkspacePage({
   /** Applies the AI result once the progress ring has reached 100%. */
   const [pendingArrival, setPendingArrival] = useState<(() => void) | null>(null);
   const [planUnlocked, setPlanUnlocked] = useState(hasActivePlan);
-  const [treatmentPlan, setTreatmentPlan] = useState(routine);
+  const [storedPlan, setTreatmentPlan] = useState(routine);
   const [triageQuiz, setTriageQuiz] = useState(initialQuiz);
   const [activeReportId, setActiveReportId] = useState(reportId);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
@@ -226,12 +246,51 @@ export default function WorkspacePage({
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [painFlow, setPainFlow] = useState<PainFlow | null>(null);
+  const [noticeDismissedOn, setNoticeDismissedOn] = useState<string | null>(null);
+  /** Set when a plan is made in this visit, so it does not borrow the previous plan's start date. */
+  const [freshPlanKey, setFreshPlanKey] = useState<string | null>(null);
+  const utcOffset = useLocalUtcOffset();
+  // Day 1 is the day the analysis ran. Plans saved before schedules were dated
+  // take it from their creation time in the viewer's own time zone.
+  const fallbackStartKey = freshPlanKey ?? (planCreatedAt ? isoToDateKey(planCreatedAt, utcOffset) : todayKey);
+  // Missed working days are pushed forward so the missed sessions repeat. The
+  // result is shown at once and saved in the background (see the effect below).
+  const reconciled = useMemo(
+    () =>
+      storedPlan
+        ? reconcileSchedule(storedPlan, Object.values(progressByDate), todayKey, fallbackStartKey)
+        : null,
+    [storedPlan, progressByDate, todayKey, fallbackStartKey],
+  );
+  const treatmentPlan = reconciled?.plan ?? storedPlan;
+  const needsScheduleSave = reconciled?.changed === true && !escalation;
+  useEffect(() => {
+    if (!needsScheduleSave || !activeReportId) return;
+    let cancelled = false;
+    void syncSchedule(activeReportId, todayKey, fallbackStartKey).then((saved) => {
+      if (!cancelled && saved.success) setTreatmentPlan(saved.plan);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsScheduleSave, activeReportId, todayKey, fallbackStartKey]);
+  const pendingNotice = activeSkipNotice(treatmentPlan);
+  const skipNotice = pendingNotice && pendingNotice.noticedOn !== noticeDismissedOn ? pendingNotice : null;
+  const handleDismissSkipNotice = () => {
+    if (!skipNotice) return;
+    setNoticeDismissedOn(skipNotice.noticedOn);
+    if (activeReportId) void dismissSkipNotice(activeReportId);
+  };
 
   const journeyMonths = useMemo(
-    () => createJourneyMonths(treatmentPlan),
-    [treatmentPlan],
+    () => createJourneyMonths(treatmentPlan, treatmentPlan?.startDateKey ?? todayKey),
+    [treatmentPlan, todayKey],
   );
-  const rollingDays = useMemo(() => createRollingDays(treatmentPlan), [treatmentPlan]);
+  const rollingDays = useMemo(
+    () => createRollingDays(treatmentPlan, treatmentPlan?.scheduleAnchor ?? todayKey),
+    [treatmentPlan, todayKey],
+  );
+  const dayNumber = treatmentPlan?.startDateKey ? daysBetween(treatmentPlan.startDateKey, todayKey) + 1 : null;
   const scheduleStartDate = useMemo(() => {
     const firstScheduledDay = rollingDays[0];
     if (firstScheduledDay) {
@@ -289,14 +348,13 @@ export default function WorkspacePage({
   const selectedDateKey = selectedScheduleDay
     ? toDateKey(parseCalendarKey(selectedScheduleDay.key))
     : null;
-  const canRecordProgress = selectedDateKey !== null && selectedDateKey === toDateKey(new Date());
+  const canRecordProgress = selectedDateKey !== null && selectedDateKey === todayKey;
   const selectedProgress = selectedDateKey ? progressByDate[selectedDateKey] : undefined;
   const selectedExercises = useMemo(
     () => (treatmentPlan ? getDayExercises(treatmentPlan, selectedScheduleDay) : []),
     [treatmentPlan, selectedScheduleDay],
   );
   const stageExercises = useMemo(() => selectedExercises.map(resolveStageExercise), [selectedExercises]);
-  const todayKey = toDateKey(new Date());
   const todayProgress = progressByDate[todayKey];
   const stoppedToday = todayProgress?.stopped === true;
   const stage = useStageController(stageExercises.length, stoppedToday);
@@ -668,6 +726,8 @@ export default function WorkspacePage({
             if (found) setEscalation(found);
             return;
           }
+          // Analysis day is Day 1: the new plan starts counting today.
+          setFreshPlanKey(toDateKey(new Date()));
           setTreatmentPlan(plan);
           setPlanUnlocked(true);
           setFlowPhase("ready");
@@ -754,7 +814,8 @@ export default function WorkspacePage({
         <div className="flex min-w-[220px] items-center justify-end gap-4">
           {planUnlocked && treatmentPlan ? (
             <span className="rounded-lg border border-white/15 bg-zinc-950 px-2 py-1 text-[10px] text-white/70">
-              {formatPlanDuration(treatmentPlan.durationMonths)} plan
+              {dayNumber !== null ? `Day ${dayNumber} of ` : ""}
+              {formatPlanDuration(treatmentPlan.durationMonths)}
             </span>
           ) : null}
           <Link className={`${interactive} text-[11px] text-white/65 hover:text-white`} href="/dashboard#history">
@@ -766,6 +827,25 @@ export default function WorkspacePage({
           </span>
         </div>
       </header>
+
+      {skipNotice ? (
+        <div
+          className="flex shrink-0 items-start justify-between gap-4 border-b border-amber-300/30 bg-amber-300/10 px-5 py-2.5"
+          role="alert"
+        >
+          <p className="text-xs leading-relaxed text-amber-100">
+            <span className="font-semibold">{describeSkipNotice(skipNotice).title}. </span>
+            {describeSkipNotice(skipNotice).body}
+          </p>
+          <button
+            className={`${interactive} shrink-0 rounded-lg border border-amber-300/40 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-300/15`}
+            onClick={handleDismissSkipNotice}
+            type="button"
+          >
+            Got it
+          </button>
+        </div>
+      ) : null}
 
       <div className="workspace-grid flex-1 grid grid-cols-12 gap-4 overflow-hidden p-4">
         <div className="workspace-rail col-span-3 flex flex-col gap-4 overflow-y-auto">

@@ -8,17 +8,21 @@ import { repairSchedule } from "@/lib/kinematics/plan-repair";
 import {
   applyScheduleRestore,
   collectExerciseNames,
+  dateKeySchema,
   feedbackSubmissionSchema,
   findRescheduleProblem,
   mergeRescheduledSchedule,
   recordRescheduleBackup,
   restoreScheduleForReset,
   withoutBackups,
+  type ActionFailure,
   type FeedbackSubmission,
+  type StoredTreatmentPlan,
   type ResetDayResult,
   type SubmitFeedbackResult,
   type ToggleExerciseResult,
 } from "@/lib/progress/dailyProgress";
+import { reconcileSchedule } from "@/lib/progress/schedule";
 import {
   STOPPED_MESSAGE,
   fail,
@@ -228,4 +232,78 @@ export async function submitDailyFeedback(
 
   revalidatePath("/workspace");
   return { success: true, rescheduled: true, schedule };
+}
+
+export type SyncScheduleResult =
+  | { success: true; plan: StoredTreatmentPlan; skippedDateKeys: string[]; changed: boolean }
+  | ActionFailure;
+
+/**
+ * Brings the saved schedule up to the calendar. Day 1 is the day the analysis
+ * ran; working days that passed with no exercise done are moved forward so the
+ * missed sessions are repeated. The browser sends its own local date.
+ */
+export async function syncSchedule(
+  reportId: string,
+  todayKey: string,
+  fallbackStartKey: string,
+): Promise<SyncScheduleResult> {
+  const owned = await loadOwnedPlan(reportId);
+  if ("error" in owned) {
+    return fail(owned.error);
+  }
+
+  const dateError = validateDateKey(todayKey);
+  if (dateError) {
+    return fail(dateError);
+  }
+  const startKey =
+    dateKeySchema.safeParse(fallbackStartKey).success && fallbackStartKey <= todayKey ? fallbackStartKey : todayKey;
+
+  const rows = await prisma.dailyProgress.findMany({
+    where: { clinicalReportId: reportId },
+    select: { dateKey: true, completedExercises: true, completedAt: true, stoppedAt: true },
+  });
+  const result = reconcileSchedule(
+    owned.plan,
+    rows.map((row) => ({
+      dateKey: row.dateKey,
+      completedExercises: row.completedExercises,
+      completed: row.completedAt !== null,
+      stopped: row.stoppedAt !== null,
+    })),
+    todayKey,
+    startKey,
+  );
+
+  if (result.changed) {
+    await prisma.treatmentPlan.update({
+      where: { id: owned.treatmentPlanId },
+      data: { routine: result.plan },
+    });
+  }
+
+  return {
+    success: true,
+    plan: withoutBackups(result.plan),
+    skippedDateKeys: result.skippedDateKeys,
+    changed: result.changed,
+  };
+}
+
+/** Hides the "day skipped" alert once the patient has read it. */
+export async function dismissSkipNotice(reportId: string): Promise<{ success: true } | ActionFailure> {
+  const owned = await loadOwnedPlan(reportId);
+  if ("error" in owned) {
+    return fail(owned.error);
+  }
+  if (!owned.plan.skipNotice || owned.plan.skipNotice.dismissed) {
+    return { success: true };
+  }
+
+  await prisma.treatmentPlan.update({
+    where: { id: owned.treatmentPlanId },
+    data: { routine: { ...owned.plan, skipNotice: { ...owned.plan.skipNotice, dismissed: true } } },
+  });
+  return { success: true };
 }
