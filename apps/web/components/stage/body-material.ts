@@ -1,4 +1,4 @@
-import { Color, MeshStandardMaterial, Vector3 } from "three";
+import { Color, DoubleSide, MeshStandardMaterial, Vector3, type Material, type Object3D, type SkinnedMesh } from "three";
 
 export const MAX_GLOWS = 8;
 
@@ -12,20 +12,8 @@ export type GlowUniforms = {
   uRimStrength: { value: number };
 };
 
-/**
- * Matte clinical mannequin material: standard PBR plus an emerald fresnel rim
- * and up to eight capsule-shaped region glows computed in the fragment shader.
- * Works with skinning, so the glow follows the animated joints.
- */
-export function createBodyMaterial(baseColor: string, rimColor: string) {
-  const material = new MeshStandardMaterial({
-    color: new Color(baseColor),
-    roughness: 0.68,
-    metalness: 0,
-    envMapIntensity: 0.22,
-  });
-
-  const uniforms: GlowUniforms = {
+export function createGlowUniforms(rimColor: string): GlowUniforms {
+  return {
     uGlowA: { value: Array.from({ length: MAX_GLOWS }, () => new Vector3()) },
     uGlowB: { value: Array.from({ length: MAX_GLOWS }, () => new Vector3()) },
     uGlowR: { value: Array.from({ length: MAX_GLOWS }, () => 0.1) },
@@ -34,14 +22,31 @@ export function createBodyMaterial(baseColor: string, rimColor: string) {
     uRimColor: { value: new Color(rimColor) },
     uRimStrength: { value: 0.22 },
   };
+}
 
+/**
+ * Adds an emerald fresnel rim and up to eight capsule-shaped region glows,
+ * computed in the fragment shader, to a standard material. Works with
+ * skinning, so the glow follows the animated joints. All patched materials
+ * share one set of uniforms.
+ */
+export type GlowOptions = {
+  /** scales the region glow (dark cloth reads as a solid block at full strength) */
+  gain?: number;
+  /** pushes the surface out along its normal, in metres, so skin cannot poke through clothing */
+  inflate?: number;
+};
+
+export function addGlow(material: MeshStandardMaterial, uniforms: GlowUniforms, cacheKey: string, options: GlowOptions = {}) {
+  const gain = (options.gain ?? 1).toFixed(3);
+  const inflate = (options.inflate ?? 0).toFixed(4);
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vSomaWorld;")
       .replace(
         "#include <skinning_vertex>",
-        "#include <skinning_vertex>\nvSomaWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+        `#include <skinning_vertex>\ntransformed += normalize(objectNormal) * ${inflate};\nvSomaWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -72,12 +77,60 @@ for (int i = 0; i < ${MAX_GLOWS}; i++) {
   somaGlow += uGlowColor[i] * g;
 }
 float somaRim = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.6);
-totalEmissiveRadiance += somaGlow + uRimColor * smoothstep(0.08, 1.0, somaRim) * uRimStrength;`,
+totalEmissiveRadiance += somaGlow * ${gain} + uRimColor * smoothstep(0.08, 1.0, somaRim) * uRimStrength;`,
       );
   };
-  material.customProgramCacheKey = () => "soma-body-glow-v3";
+  material.customProgramCacheKey = () => `${cacheKey}-g${gain}-i${inflate}`;
+}
 
-  return { material, uniforms };
+/**
+ * Flat matte mannequin material, used when only the texture-free body is
+ * available (the render fallback).
+ */
+export function createBodyMaterial(baseColor: string, uniforms: GlowUniforms) {
+  const material = new MeshStandardMaterial({
+    color: new Color(baseColor),
+    roughness: 0.68,
+    metalness: 0,
+    envMapIntensity: 0.22,
+  });
+  addGlow(material, uniforms, "soma-body-glow-v3");
+  return material;
+}
+
+/** Boxers: a calmer glow, and pushed out a few millimetres so deep hip folds do not show skin through. */
+const BOXERS_GLOW: GlowOptions = { gain: 0.4, inflate: 0.004 };
+
+/**
+ * Gives every skinned mesh of the model its own material for this stage:
+ * textured materials keep their maps exactly as authored (the skin is not
+ * re-tinted or re-tuned) and get the glow and rim; texture-free (lite)
+ * materials are replaced by the flat mannequin. Returns the materials so the
+ * caller can dispose them. Textures are shared with the loaded model and are
+ * left alone.
+ */
+export function dressBody(model: Object3D, baseColor: string, uniforms: GlowUniforms): Material[] {
+  const created: Material[] = [];
+  model.traverse((object) => {
+    const mesh = object as SkinnedMesh;
+    if (!mesh.isSkinnedMesh) return;
+    const source = mesh.material as MeshStandardMaterial;
+    let material: MeshStandardMaterial;
+    if (source.name === "AthleteSkinLite") {
+      material = createBodyMaterial(baseColor, uniforms);
+    } else {
+      material = source.clone();
+      // The body mesh is open at the fingertips (the nails were a separate mesh): fill them.
+      if (source.name === "AthleteSkin") material.side = DoubleSide;
+      // The eyes keep their own look; textured skin and clothing get the glow.
+      if (source.map && source.name !== "AthleteEyes") {
+        addGlow(material, uniforms, `soma-athlete-glow-${source.name}`, source.name === "AthleteBoxers" ? BOXERS_GLOW : undefined);
+      }
+    }
+    mesh.material = material;
+    created.push(material);
+  });
+  return created;
 }
 
 export type GlowEntry = { a: Vector3; b: Vector3; radius: number; color: Color };

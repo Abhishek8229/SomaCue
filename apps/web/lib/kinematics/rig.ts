@@ -9,40 +9,53 @@ import {
 } from "three";
 
 /**
- * Canonical joints mapped to the Quaternius Universal Base Characters rig
- * (Unreal mannequin naming). This is the only file that knows bone names.
+ * Canonical joints mapped to the Character Creator 4 skeleton in
+ * public/models/athlete-male.glb (CC_Base_* names). This is the only file that
+ * knows bone names.
+ *
+ * CC4 specifics the mapping accounts for:
+ * - Hip is the root of both the legs (through CC_Base_Pelvis) and the spine
+ *   (through CC_Base_Waist), so it is the joint the solver tilts as "pelvis".
+ * - The spine is Waist, Spine01, Spine02 (three segments, like the previous rig).
+ *   There is no single neck bone: NeckTwist01 carries the neck and Head the skull.
+ * - There is no toe-tip bone. MidToe1 (the middle toe's base) stands in for it.
+ * - The skin is weighted to helper bones (Pelvis, *Twist*, *ShareBone, Breast,
+ *   JawRoot ...). They keep their neutral local pose and follow their parent;
+ *   jointOwners() below assigns each one to the mapped joint it belongs to.
+ * - The source rest pose is an A-pose (arms about 32 degrees below horizontal).
+ *   createBodyRig() swings the arms to hang at the sides.
  */
 export const RIG_BONE_NAMES = {
-  pelvis: "pelvis",
-  spine1: "spine_01",
-  spine2: "spine_02",
-  spine3: "spine_03",
-  neck: "neck_01",
-  head: "Head",
-  clavicleL: "clavicle_l",
-  upperarmL: "upperarm_l",
-  lowerarmL: "lowerarm_l",
-  handL: "hand_l",
-  middleL: "middle_01_l",
-  indexL: "index_01_l",
-  pinkyL: "pinky_01_l",
-  clavicleR: "clavicle_r",
-  upperarmR: "upperarm_r",
-  lowerarmR: "lowerarm_r",
-  handR: "hand_r",
-  middleR: "middle_01_r",
-  indexR: "index_01_r",
-  pinkyR: "pinky_01_r",
-  thighL: "thigh_l",
-  calfL: "calf_l",
-  footL: "foot_l",
-  ballL: "ball_l",
-  ballLeafL: "ball_leaf_l",
-  thighR: "thigh_r",
-  calfR: "calf_r",
-  footR: "foot_r",
-  ballR: "ball_r",
-  ballLeafR: "ball_leaf_r",
+  pelvis: "CC_Base_Hip",
+  spine1: "CC_Base_Waist",
+  spine2: "CC_Base_Spine01",
+  spine3: "CC_Base_Spine02",
+  neck: "CC_Base_NeckTwist01",
+  head: "CC_Base_Head",
+  clavicleL: "CC_Base_L_Clavicle",
+  upperarmL: "CC_Base_L_Upperarm",
+  lowerarmL: "CC_Base_L_Forearm",
+  handL: "CC_Base_L_Hand",
+  middleL: "CC_Base_L_Mid1",
+  indexL: "CC_Base_L_Index1",
+  pinkyL: "CC_Base_L_Pinky1",
+  clavicleR: "CC_Base_R_Clavicle",
+  upperarmR: "CC_Base_R_Upperarm",
+  lowerarmR: "CC_Base_R_Forearm",
+  handR: "CC_Base_R_Hand",
+  middleR: "CC_Base_R_Mid1",
+  indexR: "CC_Base_R_Index1",
+  pinkyR: "CC_Base_R_Pinky1",
+  thighL: "CC_Base_L_Thigh",
+  calfL: "CC_Base_L_Calf",
+  footL: "CC_Base_L_Foot",
+  ballL: "CC_Base_L_ToeBase",
+  ballLeafL: "CC_Base_L_MidToe1",
+  thighR: "CC_Base_R_Thigh",
+  calfR: "CC_Base_R_Calf",
+  footR: "CC_Base_R_Foot",
+  ballR: "CC_Base_R_ToeBase",
+  ballLeafR: "CC_Base_R_MidToe1",
 } as const;
 export type RigJoint = keyof typeof RIG_BONE_NAMES;
 
@@ -234,11 +247,10 @@ export function createBodyRig(model: Object3D): BodyRig {
     return n;
   });
 
-  const headWorld = neutralWorld.get(bones.head) as Quaternion;
-  const headTopLocal = new Vector3(0, 0.19, 0.02).applyQuaternion(headWorld.clone().invert());
-
-  const sampler = buildSampler(mesh, bones);
+  const owners = jointOwners(mesh, bones);
+  const sampler = buildSampler(mesh, bones, owners);
   sampleVertices(mesh, sampler);
+  const headTopLocal = measureHeadTop(sampler, owners, bones.head);
   let minY = Infinity;
   let maxY = -Infinity;
   for (let i = 1; i < sampler.world.length; i += 3) {
@@ -246,7 +258,7 @@ export function createBodyRig(model: Object3D): BodyRig {
     maxY = Math.max(maxY, sampler.world[i]);
   }
 
-  const capsules = buildCapsules(mesh, bones, sampler);
+  const capsules = buildCapsules(mesh, bones, sampler, owners, headTopLocal);
 
   return {
     root,
@@ -269,33 +281,89 @@ export function createBodyRig(model: Object3D): BodyRig {
 
 type BoneGroup = Set<number>;
 
-function buildSampler(mesh: SkinnedMesh, bones: Record<RigJoint, Bone>): VertexSampler {
+/**
+ * The mapped joint each skeleton bone belongs to: the bone itself when it is
+ * mapped, otherwise its nearest mapped ancestor. The CC4 skin is weighted to
+ * helper bones (Pelvis, thigh and forearm twist, share bones, fingers, toes),
+ * and this is how their vertices end up in the right contact group and capsule.
+ */
+function jointOwners(mesh: SkinnedMesh, bones: Record<RigJoint, Bone>): Array<RigJoint | null> {
+  const byBone = new Map<Object3D, RigJoint>();
+  for (const [joint, bone] of Object.entries(bones) as Array<[RigJoint, Bone]>) byBone.set(bone, joint);
+  return mesh.skeleton.bones.map((bone) => {
+    for (let node: Object3D | null = bone; node; node = node.parent) {
+      const joint = byBone.get(node);
+      if (joint) return joint;
+    }
+    return null;
+  });
+}
+
+/** Skeleton indices whose owner is one of `joints`. */
+function bonesOwnedBy(owners: Array<RigJoint | null>, joints: readonly RigJoint[]): BoneGroup {
+  const wanted = new Set<RigJoint>(joints);
+  const set: BoneGroup = new Set();
+  owners.forEach((owner, index) => {
+    if (owner && wanted.has(owner)) set.add(index);
+  });
+  return set;
+}
+
+/** Index of the heaviest bone of vertex `v` in a 4-influence skin. */
+function dominantBone(skinIndex: ArrayLike<number>, skinWeight: ArrayLike<number>, v: number) {
+  let best = 0;
+  let bestWeight = -1;
+  for (let k = 0; k < 4; k++) {
+    const weight = skinWeight[v * 4 + k];
+    if (weight > bestWeight) {
+      bestWeight = weight;
+      best = skinIndex[v * 4 + k];
+    }
+  }
+  return { bone: best, weight: bestWeight };
+}
+
+/**
+ * Crown of the head in Head bone local space, measured from the skin so it fits
+ * the model: the centre of the head vertices within 1 cm of the highest one.
+ */
+function measureHeadTop(sampler: VertexSampler, owners: Array<RigJoint | null>, head: Bone) {
+  const w = sampler.world;
+  const crown: number[] = [];
+  let top = -Infinity;
+  for (let i = 0; i < sampler.indices.length; i++) {
+    const { bone } = dominantBone(sampler.joints, sampler.weights, i);
+    if (owners[bone] !== "head") continue;
+    crown.push(i);
+    top = Math.max(top, w[i * 3 + 1]);
+  }
+  const point = new Vector3();
+  let count = 0;
+  for (const i of crown) {
+    if (w[i * 3 + 1] < top - 0.01) continue;
+    point.x += w[i * 3];
+    point.y += w[i * 3 + 1];
+    point.z += w[i * 3 + 2];
+    count++;
+  }
+  if (count === 0) throw new Error("No head vertices found to measure the head top.");
+  return head.worldToLocal(point.multiplyScalar(1 / count));
+}
+
+function buildSampler(mesh: SkinnedMesh, bones: Record<RigJoint, Bone>, owners: Array<RigJoint | null>): VertexSampler {
   const geometry = mesh.geometry;
   const position = geometry.attributes.position;
   const skinIndex = geometry.attributes.skinIndex;
   const skinWeight = geometry.attributes.skinWeight;
-  const skeleton = mesh.skeleton;
-  const indexOf = (bone: Bone) => skeleton.bones.indexOf(bone);
-  const descendants = (bone: Bone) => {
-    const set: BoneGroup = new Set();
-    bone.traverse((child) => {
-      const i = skeleton.bones.indexOf(child as Bone);
-      if (i >= 0) set.add(i);
-    });
-    return set;
-  };
 
-  const handBones = new Set([...descendants(bones.handL), ...descendants(bones.handR)]);
-  const footBones = new Set([...descendants(bones.footL), ...descendants(bones.footR)]);
-  const trunkBones = new Set(
-    [bones.pelvis, bones.spine1, bones.spine2, bones.spine3, bones.neck, bones.head, bones.clavicleL, bones.clavicleR].map(indexOf),
-  );
-  const thighBones = new Set([indexOf(bones.thighL), indexOf(bones.thighR)]);
-  const calfBones = new Set([indexOf(bones.calfL), indexOf(bones.calfR)]);
-  const ballBones = new Set([
-    ...descendants(bones.ballL),
-    ...descendants(bones.ballR),
+  const handBones = bonesOwnedBy(owners, ["handL", "middleL", "indexL", "pinkyL", "handR", "middleR", "indexR", "pinkyR"]);
+  const ballBones = bonesOwnedBy(owners, ["ballL", "ballLeafL", "ballR", "ballLeafR"]);
+  const footBones = new Set([...bonesOwnedBy(owners, ["footL", "footR"]), ...ballBones]);
+  const trunkBones = bonesOwnedBy(owners, [
+    "pelvis", "spine1", "spine2", "spine3", "neck", "head", "clavicleL", "clavicleR",
   ]);
+  const thighBones = bonesOwnedBy(owners, ["thighL", "thighR"]);
+  const calfBones = bonesOwnedBy(owners, ["calfL", "calfR"]);
 
   const dominant = (v: number) => {
     let best = 0;
@@ -446,6 +514,8 @@ function buildCapsules(
   mesh: SkinnedMesh,
   bones: Record<RigJoint, Bone>,
   sampler: VertexSampler,
+  owners: Array<RigJoint | null>,
+  headTopLocal: Vector3,
 ): CapsuleDef[] {
   const defs: Array<Omit<CapsuleDef, "radius"> & { fallback: number }> = [
     { id: "trunk", from: "pelvis", to: "neck", fallback: 0.13 },
@@ -462,18 +532,18 @@ function buildCapsules(
     );
   }
 
-  // Radius: median distance of the bone's own vertices to its axis, shrunk so
-  // the capsules sit inside the skin.
-  const skeleton = mesh.skeleton;
+  // Radius: median distance of the joint's own vertices to its axis, shrunk so
+  // the capsules sit inside the skin. A vertex belongs to the joint that owns its
+  // heaviest bone, so twist and share bones count toward their limb.
   const w = sampler.world;
-  const headTop = worldPos(bones.head).add(new Vector3(0, 0.19, 0.02));
+  const headTop = bones.head.localToWorld(headTopLocal.clone());
   return defs.map((def) => {
     const a = worldPos(bones[def.from]);
     const b = def.to === "headTop" ? headTop : worldPos(bones[def.to]);
-    const owner = skeleton.bones.indexOf(bones[def.from]);
     const distances: number[] = [];
     for (let i = 0; i < sampler.indices.length; i++) {
-      if (sampler.joints[i * 4] !== owner || sampler.weights[i * 4] < 0.5) continue;
+      const { bone, weight } = dominantBone(sampler.joints, sampler.weights, i);
+      if (owners[bone] !== def.from || weight < 0.5) continue;
       const p = new Vector3(w[i * 3], w[i * 3 + 1], w[i * 3 + 2]);
       distances.push(distanceToSegment(p, a, b));
     }

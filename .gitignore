@@ -7,8 +7,10 @@ dist
 apps/web/generated/
 *.tsbuildinfo
 apps/web/public/uploads/
-# Source asset packs (large). Built output lives in apps/web/public/assets/stage/.
-apps/web/public/models/
+# Source asset packs (large) stay out of git. The built athlete body GLBs are the only tracked files here.
+apps/web/public/models/*
+!apps/web/public/models/athlete-male.glb
+!apps/web/public/models/athlete-male-lite.glb
 
 # Local logs, scratch output and generated design-tool artifacts
 *.log

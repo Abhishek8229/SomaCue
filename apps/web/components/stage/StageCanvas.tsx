@@ -9,7 +9,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { loadModel } from "@/lib/load-model";
 import { readStagePalette, type StagePalette } from "@/lib/stage-palette";
-import { BODY_ASSET_URL } from "@/lib/kinematics/body-asset";
+import { BODY_ASSET_URL, BODY_LITE_ASSET_URL } from "@/lib/kinematics/body-asset";
 import { cameraFor, CAMERA_FOV_DEG } from "@/lib/kinematics/camera-presets";
 import { MotionEngine } from "@/lib/kinematics/engine";
 import type { MovementSpec } from "@/lib/kinematics/movement-spec";
@@ -19,7 +19,7 @@ import { createBodyRig } from "@/lib/kinematics/rig";
 import { seatHeight } from "@/lib/kinematics/solver";
 import type { Region } from "@/lib/kinematics/vocabulary";
 import { AngleOverlay, type OverlayInsets } from "./angle-overlay";
-import { createBodyMaterial, MAX_GLOWS, writeGlows, type GlowEntry } from "./body-material";
+import { createGlowUniforms, dressBody, MAX_GLOWS, writeGlows, type GlowEntry } from "./body-material";
 import type { StageGlow, StageHud, StageStatus, StageViewCommand } from "./stage-types";
 
 export type StageCanvasProps = {
@@ -116,16 +116,17 @@ function StageScene({
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const matRef = useRef<Mesh>(null);
 
-  const { engine, material, uniforms } = useMemo(() => {
+  const { engine, materials, uniforms } = useMemo(() => {
     const rig = createBodyRig(cloneSkinned(template));
-    const { material: bodyMaterial, uniforms: glowUniforms } = createBodyMaterial(palette.body, palette.accent);
-    rig.mesh.material = bodyMaterial;
+    const glowUniforms = createGlowUniforms(palette.accent);
+    // Textured body: keep the GLB's PBR materials and add the glow. Lite body: flat mannequin.
+    const bodyMaterials = dressBody(rig.model, palette.body, glowUniforms);
     rig.mesh.castShadow = false;
     seatHeight(rig);
-    return { engine: new MotionEngine(rig), material: bodyMaterial, uniforms: glowUniforms };
+    return { engine: new MotionEngine(rig), materials: bodyMaterials, uniforms: glowUniforms };
   }, [template, palette]);
 
-  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => () => materials.forEach((material) => material.dispose()), [materials]);
 
   const overlay = useMemo(
     () => new AngleOverlay({ accent: palette.accent, ink: palette.ink, muted: palette.muted }),
@@ -476,7 +477,12 @@ function StageCanvas({ onStatus, ...props }: StageCanvasProps) {
   useEffect(() => {
     let active = true;
     onStatus("loading");
+    // The textured body first; if it cannot load (decoder, WebP, network), the texture-free body.
     loadModel(BODY_ASSET_URL)
+      .catch((error: unknown) => {
+        console.warn("The textured body did not load, using the plain body.", error);
+        return loadModel(BODY_LITE_ASSET_URL);
+      })
       .then((gltf) => {
         if (!active) return;
         setTemplate(gltf.scene);

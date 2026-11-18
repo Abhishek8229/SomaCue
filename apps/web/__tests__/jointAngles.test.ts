@@ -80,7 +80,13 @@ describe("Supine Pelvic Tilt (a subtle movement)", () => {
     expect(pelvis).toBeGreaterThan(10 * safe - 0.1);
     expect(pelvis).toBeLessThan(10 * safe + 1.5);
     expect(get(readings, "lumbar").degrees).toBeCloseTo(16 * safe, 0);
-    expect(get(readings, "hipL").degrees).toBeCloseTo(10 * safe, 0);
+    // The hips cancel the tilt, so each thigh stays put and the hip reads the tilt. Both feet are
+    // pinned to the mat, though: the pelvis lifts a couple of centimetres and the leg IK re-aims each
+    // thigh by a degree or two, so the hip reads a little under the prescription, never over it.
+    const hip = get(readings, "hipL").degrees;
+    expect(hip).toBeGreaterThan(10 * safe - 2);
+    expect(hip).toBeLessThan(10 * safe + 0.5);
+    expect(get(readings, "hipR").degrees).toBeCloseTo(hip, 1);
     for (const reading of readings.values()) expect(reading.degrees).toBeCloseTo(reading.peakDegrees, 1);
   });
 

@@ -1,12 +1,17 @@
 "use client";
 
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
 const cache = new Map<string, Promise<GLTF>>();
 let loader: GLTFLoader | null = null;
 
 function getLoader(): GLTFLoader {
-  if (!loader) loader = new GLTFLoader();
+  if (!loader) {
+    loader = new GLTFLoader();
+    // The athlete body is Meshopt-compressed.
+    loader.setMeshoptDecoder(MeshoptDecoder);
+  }
   return loader;
 }
 

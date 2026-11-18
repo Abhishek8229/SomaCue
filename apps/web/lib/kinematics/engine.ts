@@ -7,7 +7,7 @@ import {
   type MovementSpec,
 } from "./movement-spec";
 import { POSTURE_DEFS } from "./postures";
-import { sampleVertices, type BodyRig } from "./rig";
+import { sampleVertices, type BodyRig, type SideKey } from "./rig";
 import {
   basePose,
   endPose,
@@ -82,10 +82,13 @@ export class MotionEngine {
       this.sides = [normal, spec.alternateSides ? make(true) : normal];
       const track = (mirrored: boolean) => {
         const side = (this.sides as [SideState, SideState])[mirrored ? 1 : 0];
+        // Arms the solver only rests on the floor are not part of the exercise.
+        const passiveArms = (side.setup.restingHands ?? []).map((pin) => (pin === "left_hand" ? "L" : "R") as SideKey);
         return buildAngleTrack(
           this.rig,
           (progress) => solvePose(this.rig, spec.posture, poseAt(spec, progress * side.safe, mirrored), side.setup),
           { start: startPose(spec, mirrored), end: endPose(spec, mirrored) },
+          { passiveArms },
         );
       };
       const first = track(false);

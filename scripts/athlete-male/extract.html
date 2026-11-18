@@ -1,0 +1,134 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>athlete-male FBX extractor</title>
+<script type="importmap">
+  { "imports": { "three": "/three/build/three.module.js", "three/addons/": "/three/examples/jsm/" } }
+</script>
+<script type="module">
+  // Reads the Character Creator 4 FBX with three's FBXLoader and hands back raw geometry and
+  // skeleton data (centimetres, Y-up, bind pose). scripts/athlete-male/build.cjs does the rest.
+  import * as THREE from "three";
+  import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+
+  const manager = new THREE.LoadingManager();
+  // Textures are built from the BMP files in Node. Send every image request to a 1x1 stub.
+  manager.setURLModifier((url) => (/\.(bmp|png|jpe?g|tga)$/i.test(url) ? "/stub.png" : url));
+
+  const b64 = (typed) => {
+    const bytes = new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength);
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  };
+
+  window.extract = async (config) => {
+    const fbx = await new Promise((resolve, reject) => new FBXLoader(manager).load("/source/" + config.fbx, resolve, undefined, reject));
+    fbx.updateMatrixWorld(true);
+
+    // CC4 exports most bones twice: a structural bone and an identity leaf with the same name.
+    const isAlias = (b) =>
+      b.isBone &&
+      b.parent?.isBone &&
+      b.parent.name === b.name &&
+      b.position.lengthSq() < 1e-10 &&
+      Math.abs(Math.abs(b.quaternion.w) - 1) < 1e-7 &&
+      Math.abs(b.scale.x - 1) < 1e-7 && Math.abs(b.scale.y - 1) < 1e-7 && Math.abs(b.scale.z - 1) < 1e-7;
+    const canonical = (b) => {
+      let c = b;
+      while (isAlias(c)) c = c.parent;
+      return c;
+    };
+
+    const root = fbx.getObjectByName(config.rootBone);
+    if (!root) throw new Error("No bone named " + config.rootBone);
+    const bones = [];
+    const index = new Map();
+    (function walk(b) {
+      if (!isAlias(b)) {
+        index.set(b, bones.length);
+        bones.push(b);
+      }
+      for (const c of b.children) if (c.isBone) walk(c);
+    })(root);
+
+    const names = new Set();
+    for (const b of bones) {
+      if (names.has(b.name)) throw new Error("Bone name is still duplicated after merging: " + b.name);
+      names.add(b.name);
+    }
+
+    const boneData = bones.map((b) => {
+      const parent = b === root ? null : canonical(b.parent);
+      const local = parent
+        ? new THREE.Matrix4().multiplyMatrices(new THREE.Matrix4().copy(parent.matrixWorld).invert(), b.matrixWorld)
+        : b.matrixWorld.clone();
+      const t = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+      local.decompose(t, q, s);
+      const ws = new THREE.Vector3().setFromMatrixScale(b.matrixWorld);
+      return {
+        name: b.name,
+        parent: parent ? index.get(parent) : -1,
+        t: t.toArray(), q: q.toArray(), s: s.toArray(),
+        world: Array.from(b.matrixWorld.elements),
+        worldScale: ws.toArray(),
+      };
+    });
+
+    const mapBone = (b) => index.get(canonical(b));
+    const morphMax = {};
+
+    const meshes = {};
+    for (const spec of config.meshes) {
+      const m = fbx.getObjectByName(spec.name);
+      if (!m || !m.isSkinnedMesh) throw new Error("Not a skinned mesh: " + spec.name);
+      const g = m.geometry;
+      const n = g.attributes.position.count;
+      morphMax[spec.name] = Math.max(0, ...(m.morphTargetInfluences ?? [0]));
+
+      const positions = new Float32Array(n * 3);
+      const v = new THREE.Vector3();
+      for (let i = 0; i < n; i++) {
+        v.fromBufferAttribute(g.attributes.position, i);
+        m.applyBoneTransform(i, v);
+        v.applyMatrix4(m.matrixWorld);
+        positions.set([v.x, v.y, v.z], i * 3);
+      }
+
+      // Normals are not skinned here: the pose equals the bind pose, so only the mesh transform applies.
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(m.matrixWorld);
+      const normals = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        v.fromBufferAttribute(g.attributes.normal, i).applyMatrix3(normalMatrix).normalize();
+        normals.set([v.x, v.y, v.z], i * 3);
+      }
+
+      const uvs = new Float32Array(g.attributes.uv.array);
+      const joints = new Uint16Array(n * 4);
+      const weights = new Float32Array(n * 4);
+      const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+      for (let i = 0; i < n; i++) {
+        for (let k = 0; k < 4; k++) {
+          joints[i * 4 + k] = mapBone(m.skeleton.bones[si.getComponent(i, k)]);
+          weights[i * 4 + k] = sw.getComponent(i, k);
+        }
+      }
+
+      const groups = g.groups.map((gr) => ({
+        start: gr.start, count: gr.count, materialIndex: gr.materialIndex,
+        material: Array.isArray(m.material) ? m.material[gr.materialIndex].name : m.material.name,
+      }));
+      meshes[spec.name] = {
+        vertexCount: n,
+        indexed: !!g.index,
+        groups,
+        positions: b64(positions),
+        normals: b64(normals),
+        uvs: b64(uvs),
+        joints: b64(joints),
+        weights: b64(weights),
+      };
+    }
+
+    return { bones: boneData, meshes, morphMax, rootWorldScale: boneData[0].worldScale };
+  };
+</script>

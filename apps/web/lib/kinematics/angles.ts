@@ -404,6 +404,17 @@ function geometricName(rig: BodyRig, def: JointDef, rotation: Vector3): AngleNam
 /** Poses the rig at a share of the rep (0 start pose, 1 peak), the way the engine does. */
 export type PoseAtProgress = (progress: number) => void;
 
+/** Joints of the arm. A resting arm settles passively and is not the exercise. */
+const ARM_KINDS: ReadonlySet<JointKind> = new Set(["shoulder", "scapula", "elbow", "wrist"]);
+
+export type TrackOptions = {
+  /**
+   * Sides whose arm the solver only rests on the floor (the exercise does not
+   * use it). Such an arm gets no protractor unless the exercise prescribes it.
+   */
+  passiveArms?: readonly SideKey[];
+};
+
 /**
  * Finds the joints that move during one rep and sets up a protractor for
  * each. Leaves the rig posed at the peak; the caller re-poses it.
@@ -412,7 +423,9 @@ export function buildAngleTrack(
   rig: BodyRig,
   poseAtProgress: PoseAtProgress,
   dofs: { start: DofPose; end: DofPose },
+  options: TrackOptions = {},
 ): AngleTrack {
+  const passiveArms = new Set(options.passiveArms ?? []);
   poseAtProgress(0);
   rig.root.updateMatrixWorld(true);
   const rootStart = rig.root.quaternion.clone();
@@ -487,6 +500,7 @@ export function buildAngleTrack(
 
     // Name what is measured, in the usual convention (distal relative to proximal).
     const prescribed = specName(def, dofs, mode);
+    if (!prescribed && def.side && passiveArms.has(def.side) && ARM_KINDS.has(def.kind)) return;
     if (!prescribed && peakDegrees < FOLLOWER_SHARE * largest) return;
     const toBody = def.proximal
       ? (rig.neutralWorld.get(rig.bones[def.proximal]) ?? new Quaternion())

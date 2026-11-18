@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-11-14T20:16:10.080Z",
+  "generatedAt": "2026-11-18T20:21:23.197Z",
   "rig": {
-    "bones": 65,
-    "vertices": 7281,
-    "triangles": 12566,
-    "standingHeightM": 1.818,
-    "sampledVertices": 4392
+    "bones": 93,
+    "vertices": 13742,
+    "triangles": 25095,
+    "standingHeightM": 1.8,
+    "sampledVertices": 7843
   },
   "thresholds": {
     "floorClearanceMm": -2,
@@ -14,7 +14,7 @@
     "minSafeProgress": 0.6
   },
   "clinicalRangesReviewed": false,
-  "totalMs": 605,
+  "totalMs": 972,
   "passed": 18,
   "failed": 0,
   "exercises": [
@@ -27,7 +27,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 34.1,
+      "solveMs": 37.4,
       "issues": []
     },
     {
@@ -39,7 +39,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 33.4,
+      "solveMs": 48,
       "issues": []
     },
     {
@@ -51,19 +51,19 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 28.1,
+      "solveMs": 43.8,
       "issues": []
     },
     {
       "id": "supine_pelvic_tilt",
       "posture": "supine",
       "ok": true,
-      "minClearanceMm": 0,
+      "minClearanceMm": -0.2,
       "maxPinSlipMm": 0,
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 54,
+      "solveMs": 85.5,
       "issues": []
     },
     {
@@ -75,7 +75,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 95.9,
+      "solveMs": 167.9,
       "issues": []
     },
     {
@@ -87,7 +87,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 96.1,
+      "solveMs": 163.7,
       "issues": []
     },
     {
@@ -99,7 +99,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 47.9,
+      "solveMs": 77.3,
       "issues": []
     },
     {
@@ -111,7 +111,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 46.8,
+      "solveMs": 79,
       "issues": []
     },
     {
@@ -123,7 +123,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 14.3,
+      "solveMs": 23.8,
       "issues": []
     },
     {
@@ -135,7 +135,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 14.6,
+      "solveMs": 24.6,
       "issues": []
     },
     {
@@ -147,7 +147,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 29.4,
+      "solveMs": 46,
       "issues": []
     },
     {
@@ -159,7 +159,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 11.9,
+      "solveMs": 18.6,
       "issues": []
     },
     {
@@ -171,7 +171,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 24.5,
+      "solveMs": 38,
       "issues": []
     },
     {
@@ -183,7 +183,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 25.4,
+      "solveMs": 38.7,
       "issues": []
     },
     {
@@ -195,7 +195,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 12,
+      "solveMs": 20.9,
       "issues": []
     },
     {
@@ -207,7 +207,7 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 12.1,
+      "solveMs": 20,
       "issues": []
     },
     {
@@ -219,19 +219,19 @@
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 12.1,
+      "solveMs": 17.9,
       "issues": []
     },
     {
       "id": "mini_squat",
       "posture": "standing",
       "ok": true,
-      "minClearanceMm": 2,
+      "minClearanceMm": 1.6,
       "maxPinSlipMm": 0,
       "maxOverlapMm": 0,
       "safeProgress": 1,
       "finite": true,
-      "solveMs": 10.9,
+      "solveMs": 19.2,
       "issues": []
     }
   ]
