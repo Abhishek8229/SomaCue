@@ -178,6 +178,25 @@
 .frames {
   position: absolute;
   inset: 40px 0 92px;
+  transition: opacity var(--dur-long) var(--ease-out);
+}
+
+/* Once the live figure has drawn, the still frames give way to it. */
+.frames[data-hidden="true"] {
+  opacity: 0;
+}
+
+/* The live CC4 figure sits exactly where the still frames do. */
+.figure {
+  position: absolute;
+  inset: 40px 0 92px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity var(--dur-long) var(--ease-out);
+}
+
+.figure[data-ready="true"] {
+  opacity: 1;
 }
 
 .frame {
@@ -289,7 +308,8 @@
   display: none;
 }
 
-.grid[data-layout="compact"] .frames {
+.grid[data-layout="compact"] .frames,
+.grid[data-layout="compact"] .figure {
   inset: 36px 0 150px;
 }
 

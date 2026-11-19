@@ -1,12 +1,17 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { Bar, Button, Check, Segmented, Stage, Window, type Act } from "./kit";
 import { ConditionCard } from "@/components/workspace/ConditionCard";
 import { SetRepCounter } from "@/components/workspace/SetRepCounter";
 import type { DetectedCondition } from "@/lib/clinical/assessment";
+import { usePrefersReducedMotion, useWebGLSupport } from "@/lib/use-environment";
 import styles from "./hero-stage.module.css";
+
+// The live CC4 figure, loaded only in the browser; the still frames stand in until it draws.
+const HeroFigure = dynamic(() => import("./HeroFigure"), { ssr: false });
 
 /**
  * The hero walkthrough: one scripted intake in a faux workspace window.
@@ -117,9 +122,9 @@ async function script(a: Act<S>) {
   await a.wait(600);
 }
 
-function Frames({ pose }: { pose: 0 | 1 }) {
+function Frames({ pose, hidden }: { pose: 0 | 1; hidden: boolean }) {
   return (
-    <div className={styles.frames}>
+    <div className={styles.frames} data-hidden={hidden}>
       <Image
         alt="Figure lying on its back, knees bent, lower back resting on the floor"
         className={styles.frame}
@@ -140,14 +145,34 @@ function Frames({ pose }: { pose: 0 | 1 }) {
   );
 }
 
-function StagePanel({ s, locked }: { s: S; locked: boolean }) {
+/** Move time between the two poses, inside the script's shortest beat (Return: 420 ms, 756 ms at 0.5x), so every rep settles. */
+const transitionMs = (speed: S["speed"]) => (speed === 0.5 ? 720 : 400);
+
+function StagePanel({ s, locked, armed }: { s: S; locked: boolean; armed: boolean }) {
+  const webgl = useWebGLSupport();
+  const reducedMotion = usePrefersReducedMotion();
+  const [figure, setFigure] = useState<"loading" | "ready" | "failed">("loading");
+  const handleReady = useCallback(() => setFigure("ready"), []);
+  const handleError = useCallback(() => setFigure("failed"), []);
+  const live = armed && webgl === "available" && figure !== "failed";
   return (
     <section className={styles.stagePanel} aria-label="3D movement stage">
       <div className={styles.stageTop}>
         <span className={styles.live}>{s.playing ? "live motion" : "live stage"}</span>
         <span className={styles.muted}>Lying on the back, side view</span>
       </div>
-      <Frames pose={s.pose} />
+      <Frames hidden={live && figure === "ready"} pose={s.pose} />
+      {live ? (
+        <div className={styles.figure} data-hero-figure data-ready={figure === "ready"}>
+          <HeroFigure
+            onError={handleError}
+            onReady={handleReady}
+            pose={s.pose}
+            reducedMotion={reducedMotion}
+            transitionMs={transitionMs(s.speed)}
+          />
+        </div>
+      ) : null}
       <div className={styles.caption} data-show={s.playing && s.caption !== ""}>
         {s.caption || "Move"}
       </div>
@@ -272,7 +297,7 @@ export function HeroStage() {
                   ) : null}
                 </div>
                 <div className={styles.center} style={compact && s.phase !== "stage" ? { opacity: 0, pointerEvents: "none" } : undefined}>
-                  <StagePanel s={s} locked={s.phase !== "stage"} />
+                  <StagePanel armed={armed} s={s} locked={s.phase !== "stage"} />
                 </div>
               </div>
             </Window>

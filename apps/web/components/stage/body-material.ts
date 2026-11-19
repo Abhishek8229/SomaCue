@@ -135,6 +135,13 @@ export function dressBody(model: Object3D, baseColor: string, uniforms: GlowUnif
 
 export type GlowEntry = { a: Vector3; b: Vector3; radius: number; color: Color };
 
+/** Region glow colours: pain in red, the exercise's target regions in teal, earlier flags in amber. */
+export const GLOW_COLORS = {
+  active: new Color("#5eead4").multiplyScalar(0.3),
+  pain: new Color("#f87171").multiplyScalar(0.8),
+  flagged: new Color("#fbbf24").multiplyScalar(0.35),
+};
+
 /** Upload this frame's region glows. Three.js uniforms are mutable by design. */
 export function writeGlows(uniforms: GlowUniforms, entries: readonly GlowEntry[]) {
   const count = Math.min(MAX_GLOWS, entries.length);

@@ -115,7 +115,7 @@ The report is saved before any AI work. The AI then makes a conservative resched
 
 ### Real-time 3D figure stage
 `components/stage/StageV2.tsx`, `StageCanvas.tsx`, `lib/kinematics/*`:
-- **Figure:** a rigged human body (Quaternius Universal Base Characters, CC0, `public/assets/stage/soma-body.glb`, 0.5 MB) on a lit stage with a floor grid. three.js through @react-three/fiber.
+- **Figure:** a rigged Character Creator 4 athlete (`public/models/athlete-male.glb`, 1.0 MB, Meshopt and WebP; see `docs/3d-engine/asset-register.md`) on a lit stage with a floor grid. three.js through @react-three/fiber. The hero preview card renders the same figure live (`components/landing/HeroFigure.tsx`); `public/landing/pelvic-rest.webp` and `pelvic-hold.webp` are stills of it, shown without JavaScript or WebGL.
 - **Motion:** driven live from a movement description, not from pre-recorded clips. The vocabulary covers 5 postures, 12 body segments, 24 anatomical motions and 17 regions (section 4). Every movement uses gentle angles from anatomical zero, and the engine never animates past the computed safe range.
 - **Views:** two per posture, plus free orbit.
   - Standing, seated and hands-and-knees: Anterior / Posterior.
