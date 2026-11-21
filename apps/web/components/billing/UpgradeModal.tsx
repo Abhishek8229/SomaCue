@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
-import { COMPARISON_ROWS } from "@/lib/billing/copy";
 import { PRO_TIERS, type ProTier, type UpgradeReason } from "@/lib/billing/plans";
+import { ComparisonTable } from "./ComparisonTable";
 import { FundingNote } from "./FundingNote";
 import { formatBillingDate } from "./ManageSubscription";
 import { TierSelector } from "./TierSelector";
@@ -115,33 +115,7 @@ export function UpgradeModal({ feature, phase, error, tier, recommended, accessE
 
         <FundingNote className="mt-4" />
 
-        <table className="mt-5 w-full border-separate border-spacing-0 overflow-hidden rounded-xl border border-white/10 text-left text-xs">
-          <caption className="sr-only">What is included in Free and in Pro</caption>
-          <thead>
-            <tr className="bg-zinc-950/60 text-white/60">
-              <th className="px-3 py-2 font-medium" scope="col">
-                <span className="sr-only">Feature</span>
-              </th>
-              <th className="px-3 py-2 font-medium" scope="col">
-                Free
-              </th>
-              <th className="bg-emerald-300/10 px-3 py-2 font-semibold text-emerald-200" scope="col">
-                Pro
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {COMPARISON_ROWS.map((row) => (
-              <tr key={row.feature}>
-                <th className="border-t border-white/10 px-3 py-2.5 font-medium text-white/85" scope="row">
-                  {row.feature}
-                </th>
-                <td className="border-t border-white/10 px-3 py-2.5 text-white/60">{row.free}</td>
-                <td className="border-t border-white/10 bg-emerald-300/5 px-3 py-2.5 text-emerald-100">{row.pro}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ComparisonTable className="mt-5" compact />
 
         <TierSelector disabled={busy} name="upgrade-tier" onChange={onSelectTier} recommended={recommended} value={tier} />
 

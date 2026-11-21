@@ -162,6 +162,20 @@
   color: var(--l-signal);
 }
 
+/* The Pricing link: soft emerald text in a faint tinted pill, so it reads as a destination without shouting. */
+.anchorHighlight {
+  padding: 4px var(--space-sm);
+  border: 1px solid color-mix(in oklab, var(--l-signal) 35%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--l-signal-soft);
+  color: var(--l-signal);
+}
+
+.anchorHighlight:hover {
+  border-color: var(--l-signal);
+  background: color-mix(in oklab, var(--l-signal) 20%, transparent);
+}
+
 .navActions {
   display: flex;
   align-items: center;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LEGAL_LINKS } from "@/lib/legal/business";
 import styles from "./landing.module.css";
+import { SectionLink } from "./SectionLink";
 
 export function ClosingSection() {
   return (
@@ -41,6 +42,7 @@ export function LandingFooter() {
           <a href="#guidance">3D guidance</a>
           <a href="#companion">Companion</a>
           <a href="#safety">Safety</a>
+          <SectionLink id="pricing">Pricing</SectionLink>
         </nav>
         <nav className={styles.footerLinks} aria-label="Account">
           <Link href="/login">Sign in</Link>

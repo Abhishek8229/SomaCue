@@ -1015,7 +1015,86 @@
   max-width: 72ch;
 }
 
+/* Pricing */
+.pricingGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  gap: var(--space-xl);
+  align-items: start;
+}
+
+.pricingCompare {
+  min-width: 0;
+}
+
+.pricingPanel {
+  min-width: 0;
+  padding: var(--space-lg);
+  border: 1px solid color-mix(in oklab, var(--l-signal) 40%, transparent);
+  border-radius: var(--radius-shell);
+  background: linear-gradient(180deg, var(--l-signal-soft), var(--l-panel) 60%);
+}
+
+.pricingPrice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.pricingAmount {
+  font-family: var(--font-display);
+  font-size: var(--text-display-s);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pricingMeta {
+  margin-top: var(--space-sm);
+  color: var(--stage-ink-2);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+}
+
+.pricingError,
+.pricingOk {
+  margin-top: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-input);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+}
+
+.pricingError {
+  border: 1px solid color-mix(in oklab, var(--l-alert) 45%, transparent);
+  background: var(--l-alert-soft);
+  color: var(--stage-ink);
+}
+
+.pricingOk {
+  border: 1px solid color-mix(in oklab, var(--l-signal) 45%, transparent);
+  background: var(--l-signal-soft);
+  color: var(--stage-ink);
+}
+
+.pricingActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.pricingPanel .fine a {
+  color: var(--l-signal);
+}
+
 @media (max-width: 64rem) {
+  .pricingGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .head,
   .triage,
   .companion,

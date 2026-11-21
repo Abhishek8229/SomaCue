@@ -5,6 +5,7 @@ import { GuidanceSection } from "@/components/landing/GuidanceSection";
 import { Hero } from "@/components/landing/Hero";
 import { IntakeSection } from "@/components/landing/IntakeSection";
 import { LandingNav } from "@/components/landing/LandingNav";
+import { PricingSection } from "@/components/landing/PricingSection";
 import { SafetySection } from "@/components/landing/SafetySection";
 import { TriageSection } from "@/components/landing/TriageSection";
 import styles from "@/components/landing/landing.module.css";
@@ -26,6 +27,7 @@ export default function HomePage() {
         <GuidanceSection />
         <CompanionSection />
         <SafetySection />
+        <PricingSection />
         <ClosingSection />
       </main>
       <LandingFooter />
