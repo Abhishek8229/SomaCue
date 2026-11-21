@@ -150,7 +150,7 @@ describe("upgrade modal", () => {
     ]);
     expect(table).toHaveTextContent("Week 1 only (Days 1–7)");
     expect(table).toHaveTextContent("Full adaptive schedule — Day 1 to full plan duration (at least 1 month)");
-    expect(table).toHaveTextContent("3 messages");
+    expect(table).toHaveTextContent("3 a day, 10 in total during your first 7 days");
     expect(table).toHaveTextContent("Unlimited chat (practically unlimited; fair-use limits apply if abused)");
     expect(table).toHaveTextContent("1 analysis");
     expect(table).toHaveTextContent("Unlimited re-analysis");

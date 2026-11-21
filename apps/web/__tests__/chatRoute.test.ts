@@ -15,10 +15,23 @@ const db = vi.hoisted(() => ({
     currentPeriodEnd: Date | null;
   } | null,
   streamText: vi.fn(),
+  aiConfigured: true,
+  /** when the user's latest treatment plan was made (the Free 7-day window starts then) */
+  planCreatedAt: null as Date | null,
 }));
 
 vi.mock("@/lib/auth/session", () => ({ getCurrentUser: async () => db.user }));
-vi.mock("@/lib/ai/client", () => ({ chatProvider: { chat: (model: string) => ({ model }) }, CHAT_MODEL: "test-model" }));
+vi.mock("@/lib/ai/client", () => {
+  class AiConfigError extends Error {}
+  return {
+    AiConfigError,
+    // The real one throws AiConfigError when AI_BASE_URL, AI_API_KEY or AI_MODEL is missing.
+    getChatModel: () => {
+      if (!db.aiConfigured) throw new AiConfigError("AI is not configured: set AI_MODEL in .env.");
+      return { model: "test-model" };
+    },
+  };
+});
 vi.mock("ai", () => ({ streamText: db.streamText }));
 vi.mock("@/lib/db/prisma", () => {
   const prisma = {
@@ -26,6 +39,7 @@ vi.mock("@/lib/db/prisma", () => {
     subscription: {
       findUnique: async () => db.subscription,
     },
+    treatmentPlan: { findFirst: async () => (db.planCreatedAt ? { createdAt: db.planCreatedAt } : null) },
     clinicalReport: {
       findFirst: async ({ where }: { where: { id: string; patientId: string } }) =>
         db.report && db.report.id === where.id && db.report.patientId === where.patientId ? db.report : null,
@@ -85,6 +99,8 @@ beforeEach(() => {
   db.user = { id: "patient-1", name: "Abhishek Kumar Tiwari" };
   db.recentTimes = [];
   db.sentTotal = 0;
+  db.aiConfigured = true;
+  db.planCreatedAt = null;
   db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
   db.messages.length = 0;
   db.report = {
@@ -160,57 +176,74 @@ describe("POST /api/chat", () => {
     expect(db.streamText).not.toHaveBeenCalled();
   });
 
-  it("pauses a Pro user after 25 messages sent continuously, before any AI call", async () => {
-    db.recentTimes = sentRun(25, MIN);
+  it("has no daily limit for Pro: ten messages in a day are fine", async () => {
+    db.recentTimes = sentRun(10, MIN);
+    const response = await post("Explain my condition");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Chat-Daily-Left")).toBeNull();
+    expect(response.headers.get("X-Chat-Weekly-Left")).toBe("39");
+    expect(response.headers.get("X-Chat-Total-Left")).toBeNull();
+  });
+
+  it("pauses a Pro user after 50 messages in 7 days, with a friendly 429, before any AI call", async () => {
+    db.recentTimes = sentRun(50, HOUR);
     const response = await post("Explain my condition");
 
     expect(response.status).toBe(429);
     expect(Number(response.headers.get("Retry-After"))).toBeGreaterThan(0);
     const body = await response.json();
-    expect(body).toMatchObject({ guard: "rate_limit", reason: "burst", remaining: 0 });
-    expect(body.error).toMatch(/25 messages in a row.*short break/i);
+    expect(body).toMatchObject({ guard: "rate_limit", reason: "weekly", remaining: 0, usage: { weeklyLimit: 50, weeklyLeft: 0, dailyLimit: null, totalLimit: null } });
+    expect(body.error).toMatch(/fair-use limit of 50 messages in 7 days.*next message opens up in about.*UTC/);
     expect(new Date(body.retryAt).getTime()).toBeGreaterThan(Date.now());
     expect(db.streamText).not.toHaveBeenCalled();
     expect(db.messages).toHaveLength(0);
   });
 
-  it("accepts the 25th continuous message", async () => {
-    db.recentTimes = sentRun(24, MIN);
+  it("opens the next slot 168 hours after the oldest of the 50", async () => {
+    // the oldest of the 50 was sent 5 days ago, so a slot opens in 2 days
+    db.recentTimes = [...sentRun(49, MIN), new Date(Date.now() - 5 * 24 * HOUR)];
+    const body = await (await post("Explain my condition")).json();
+    expect(Math.abs(new Date(body.retryAt).getTime() - (Date.now() + 2 * 24 * HOUR))).toBeLessThan(5_000);
+    expect(body.error).toMatch(/about 2 days/);
+  });
+
+  it("accepts the 50th message of the week and says none are left", async () => {
+    db.recentTimes = sentRun(49, MIN);
     const response = await post("Explain my condition");
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Chat-Remaining")).toBe("0");
+    expect(response.headers.get("X-Chat-Weekly-Left")).toBe("0");
+    expect(response.headers.get("X-Chat-Next-Slot")).toBeTruthy();
   });
 
-  it("starts a new run after more than 10 minutes of quiet", async () => {
-    db.recentTimes = sentRun(25, MIN, 11 * MIN);
-    expect((await post("Explain my condition")).status).toBe(200);
-  });
-
-  it("pauses a Pro user after 30 messages in 24 hours, and says when it resets", async () => {
-    // spaced out so the continuous-run limit never applies: one every 40 minutes
-    db.recentTimes = sentRun(30, 40 * MIN, 30 * MIN);
-    const response = await post("Explain my condition");
-
-    expect(response.status).toBe(429);
-    const body = await response.json();
-    expect(body).toMatchObject({ guard: "rate_limit", reason: "window" });
-    expect(body.error).toMatch(/30 messages in the last 24 hours.*UTC/);
-    const resetsAt = Math.min(...db.recentTimes.map((time) => time.getTime())) + 24 * HOUR;
-    expect(new Date(body.retryAt).getTime()).toBe(resetsAt);
-    expect(db.streamText).not.toHaveBeenCalled();
-  });
-
-  it("accepts the 30th message in 24 hours when spaced out", async () => {
-    db.recentTimes = sentRun(29, 40 * MIN, 30 * MIN);
+  it("does not count a message from more than 7 days ago", async () => {
+    db.recentTimes = [new Date(Date.now() - 8 * 24 * HOUR), ...sentRun(49, MIN)];
     expect((await post("Explain my condition")).status).toBe(200);
   });
 
   it("saves nothing for a refused message, so it does not extend its own pause", async () => {
-    db.recentTimes = sentRun(25, MIN);
-    const response = await post("Explain my condition");
-    expect(response.status).toBe(429);
-    // Nothing was saved, so a refused message does not extend its own pause.
+    db.recentTimes = sentRun(50, MIN);
+    expect((await post("Explain my condition")).status).toBe(429);
     expect(db.messages).toHaveLength(0);
+  });
+  it("answers 503 and saves nothing when the AI settings are missing", async () => {
+    db.aiConfigured = false;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await post("Walk me through today's exercises");
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).error).toMatch(/not available right now/i);
+    expect(db.streamText).not.toHaveBeenCalled();
+    expect(db.messages).toHaveLength(0);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("AI is not configured"));
+    error.mockRestore();
+  });
+
+  it("still answers guarded messages without the AI settings, because no model is needed", async () => {
+    db.aiConfigured = false;
+    const response = await post("Write a Python script to sort a list");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Chat-Guard")).toBe("off_topic");
   });
 
   it("rejects over-long messages", async () => {
@@ -237,7 +270,7 @@ describe("POST /api/chat", () => {
 
     const response = await post("Walk me through today's exercises");
     expect(await response.text()).toBe("Here is your plan.");
-    expect(response.headers.get("X-Chat-Remaining")).toBe("24");
+    expect(response.headers.get("X-Chat-Remaining")).toBe("49");
 
     const options = db.streamText.mock.calls[0][0];
     expect(options.maxOutputTokens).toBe(350);
@@ -268,33 +301,69 @@ describe("DELETE /api/chat", () => {
   });
 });
 
-describe("Free plan: 3 Rehab Companion messages", () => {
+describe("Free plan: 3 a day, 10 in total during the first 7 days", () => {
+  const DAY = 24 * HOUR;
   beforeEach(() => {
     db.subscription = null;
+    db.planCreatedAt = new Date(Date.now() - DAY); // Day 2 of the 7
   });
 
-  it("answers the first three messages and counts them down", async () => {
-    for (const [sent, left] of [[0, "2"], [1, "1"], [2, "0"]] as const) {
+  it("answers the first ten messages and counts both limits down", async () => {
+    for (let sent = 0; sent < 10; sent += 1) {
       db.sentTotal = sent;
+      db.recentTimes = []; // a new day each time, so only the total is under test
       const response = await post("Walk me through today's exercises");
       expect(response.status, `message ${sent + 1}`).toBe(200);
-      expect(response.headers.get("X-Chat-Remaining")).toBe(left);
+      expect(response.headers.get("X-Chat-Total-Left")).toBe(String(9 - sent));
+      expect(response.headers.get("X-Chat-Daily-Left")).toBe("2");
     }
-    expect(db.streamText).toHaveBeenCalledTimes(3);
+    expect(db.streamText).toHaveBeenCalledTimes(10);
   });
 
-  it("answers the fourth with HTTP 402 PRO_REQUIRED, without the AI and without saving anything", async () => {
-    db.sentTotal = 3;
+  it("answers the 11th with HTTP 402 PRO_REQUIRED, without the AI and without saving anything", async () => {
+    db.sentTotal = 10;
     const response = await post("Walk me through today's exercises");
 
     expect(response.status).toBe(402);
     expect(await response.json()).toEqual({ error: "PRO_REQUIRED", feature: "companion" });
+    expect(response.headers.get("X-Chat-Block")).toBe("total");
     expect(db.streamText).not.toHaveBeenCalled();
     expect(db.messages).toHaveLength(0);
   });
 
-  it("still answers a red-flag warning after the limit: safety is never behind the paywall", async () => {
+  it("stops the 4th message of a day with a 429 that says when the next one opens, even with the total not used up", async () => {
     db.sentTotal = 3;
+    db.recentTimes = sentRun(3, MIN);
+    const response = await post("Walk me through today's exercises");
+
+    expect(response.status).toBe(429);
+    const body = await response.json();
+    expect(body).toMatchObject({ reason: "daily", usage: { dailyLeft: 0, totalLeft: 7 } });
+    expect(db.streamText).not.toHaveBeenCalled();
+  });
+
+  it("blocks everything once the 7-day window is over, even with messages left", async () => {
+    db.planCreatedAt = new Date(Date.now() - 8 * DAY);
+    db.sentTotal = 2;
+    const response = await post("Walk me through today's exercises");
+
+    expect(response.status).toBe(402);
+    expect(response.headers.get("X-Chat-Block")).toBe("window_ended");
+    expect(db.streamText).not.toHaveBeenCalled();
+  });
+
+  it("allows chat before the first analysis, because the window starts with the plan", async () => {
+    db.planCreatedAt = null;
+    db.sentTotal = 1;
+    const response = await post("Walk me through today's exercises", null);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Chat-Total-Left")).toBe("8");
+  });
+
+  it("still answers a red-flag warning after every limit: safety is never behind a limit", async () => {
+    db.sentTotal = 10;
+    db.recentTimes = sentRun(3, MIN);
+    db.planCreatedAt = new Date(Date.now() - 9 * DAY);
     const response = await post("My leg is getting weaker every day and I can't control my bladder");
 
     expect(response.status).toBe(200);
@@ -302,48 +371,68 @@ describe("Free plan: 3 Rehab Companion messages", () => {
     expect(await response.text()).toMatch(/stop exercising now/i);
   });
 
-  it("shows how many free messages are left when the chat opens", async () => {
-    db.sentTotal = 1;
+  it("shows both counters when the chat opens", async () => {
+    db.sentTotal = 4;
+    db.recentTimes = sentRun(1, HOUR);
     const body = await (await GET(new Request("http://localhost/api/chat?reportId=report-1"))).json();
-    expect(body).toMatchObject({ plan: "free", remaining: 2 });
+    expect(body).toMatchObject({
+      plan: "free",
+      remaining: 2,
+      limit: null,
+      usage: { dailyLimit: 3, dailyLeft: 2, totalLimit: 10, totalLeft: 6 },
+    });
+    expect(body.usage.windowEndsAt).toBeTruthy();
   });
 
-  it("treats a cancelled subscription whose paid period has ended as Free", async () => {
-    db.subscription = { status: "cancelled", cancelAtPeriodEnd: true, currentPeriodEnd: new Date(Date.now() - 60_000) };
-    db.sentTotal = 3;
+  it("says why the next message would be refused", async () => {
+    db.sentTotal = 10;
+    expect((await (await GET(new Request("http://localhost/api/chat?reportId=report-1"))).json()).limit).toBe("total");
+    db.sentTotal = 1;
+    db.planCreatedAt = new Date(Date.now() - 8 * DAY);
+    expect((await (await GET(new Request("http://localhost/api/chat?reportId=report-1"))).json()).limit).toBe("window_ended");
+    db.planCreatedAt = new Date(Date.now() - DAY);
+    db.recentTimes = sentRun(3, MIN);
+    expect((await (await GET(new Request("http://localhost/api/chat?reportId=report-1"))).json()).limit).toBe("daily");
+  });
+
+  it("treats a subscription whose paid days ended as Free", async () => {
+    db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: new Date(Date.now() - 60_000) };
+    db.sentTotal = 10;
     expect((await post("Walk me through today's exercises")).status).toBe(402);
   });
 });
 
-describe("Pro plan: unlimited Rehab Companion chat", () => {
-  it("has no message limit by plan, however many were sent before", async () => {
+describe("Pro plan: unlimited in practice, with a 50 messages in 7 days fair-use limit", () => {
+  it("has no total cap and no 7-day end, however many were sent before", async () => {
     db.sentTotal = 5000;
+    db.planCreatedAt = new Date(Date.now() - 60 * 24 * HOUR);
     const response = await post("Walk me through today's exercises");
     expect(response.status).toBe(200);
     expect(db.streamText).toHaveBeenCalledTimes(1);
   });
 
-  it("reports how many messages fit before a pause, not the Free total", async () => {
+  it("sends no counter when the chat opens, only the weekly numbers", async () => {
     db.sentTotal = 99;
     db.recentTimes = sentRun(4, MIN);
     const body = await (await GET(new Request("http://localhost/api/chat?reportId=report-1"))).json();
-    expect(body).toMatchObject({ plan: "pro", remaining: 21 });
+    expect(body).toMatchObject({ plan: "pro", remaining: 46, limit: null, usage: { dailyLimit: null, dailyLeft: null, weeklyLimit: 50, weeklyLeft: 46, totalLimit: null, totalLeft: null, windowEndsAt: null } });
   });
 
-  it("reports no count while paused, so the box stays usable and the next message explains the pause", async () => {
-    db.recentTimes = sentRun(25, MIN);
+  it("reports the weekly pause as the reason once 50 are used", async () => {
+    db.recentTimes = sentRun(50, MIN);
     const body = await (await GET(new Request("http://localhost/api/chat?reportId=report-1"))).json();
-    expect(body).toMatchObject({ plan: "pro", remaining: null });
+    expect(body).toMatchObject({ remaining: 0, limit: "weekly", usage: { weeklyLeft: 0 } });
+    expect(body.usage.nextSlotAt).toBeTruthy();
   });
 
-  it("applies no Pro fair-use query to a Free user, who has the 3 message total instead", async () => {
-    db.subscription = null;
-    db.recentTimes = sentRun(40, MIN);
-    db.sentTotal = 0;
-    expect((await post("Walk me through today's exercises")).status).toBe(200);
+  it("still answers a red-flag warning after the limit", async () => {
+    db.recentTimes = sentRun(50, MIN);
+    const response = await post("My leg is getting weaker every day and I can't control my bladder");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Chat-Guard")).toBe("red_flag");
   });
 
-  it("keeps Pro through the paid period of a cancelled subscription", async () => {
+  it("keeps Pro through the paid period of an older cancelled subscription", async () => {
     db.subscription = { status: "cancelled", cancelAtPeriodEnd: true, currentPeriodEnd: new Date(Date.now() + 86_400_000) };
     db.sentTotal = 100;
     expect((await post("Walk me through today's exercises")).status).toBe(200);

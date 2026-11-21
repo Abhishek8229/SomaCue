@@ -64,10 +64,10 @@ export default function TermsPage() {
         <h2>4. Free and Pro plans</h2>
         <p>
           SomaCue is free to start. The Free plan includes {PLAN_LIMITS.free.analyses} Discovery analysis, the full 3D movement stage, Week 1 of your
-          schedule (Days 1–{PLAN_LIMITS.free.scheduleDays}) and {PLAN_LIMITS.free.companionMessages} Rehab Companion messages. SomaCue Pro adds
-          unlimited re-analysis, your full adaptive schedule from Day 1 to the full plan duration (at least 1 month), and Rehab Companion chat
-          without a message limit by plan. Fair use applies to protect the service: up to {COMPANION_LIMITS.proBurstMessages} messages sent in one
-          continuous run (each within 10 minutes of the last) and {COMPANION_LIMITS.proWindowMessages} messages in any 24 hours. Pain Override, and
+          schedule (Days 1–{PLAN_LIMITS.free.scheduleDays}) and Rehab Companion messages: up to {COMPANION_LIMITS.perDay} in any 24 hours and {PLAN_LIMITS.free.companionMessages} in total, only during the{" "}
+          {COMPANION_LIMITS.freeWindowDays} days after your plan is made. SomaCue Pro adds unlimited re-analysis, your full adaptive schedule from Day 1 to
+          the full plan duration (at least 1 month), and unlimited Rehab Companion chat. Fair use applies to protect the service: up to{" "}
+          {COMPANION_LIMITS.proPerWeek} messages in any rolling {COMPANION_LIMITS.freeWindowDays} days (168 hours). Pain Override, and
           the safe adjustment of your plan after a flare-up, are free on every plan. See the <Link href="/pricing">pricing page</Link> for details.
         </p>
 

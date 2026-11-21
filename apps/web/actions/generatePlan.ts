@@ -10,7 +10,7 @@ import { generateObject } from "ai";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { z } from "zod";
-import { aiProvider } from "@/lib/ai/client";
+import { getAiModel } from "@/lib/ai/client";
 import { movementSpecSchema } from "@/lib/kinematics/movement-spec";
 import { isTrustedUploadUrl, type ReportFiles } from "@/lib/intake/reportFiles";
 import { REFERENCE_EXERCISES } from "@/lib/kinematics/reference-exercises";
@@ -319,7 +319,7 @@ export async function generateTriageQuiz(symptoms: string, files: ReportFiles) {
   try {
     const abortSignal = createAiAbortSignal();
     const { object } = await generateObject({
-      model: aiProvider.chat("nvidia/nemotron-3.5-super-vl:free"),
+      model: getAiModel(),
       abortSignal,
       maxRetries: 0,
       schema: triageResultSchema,
@@ -383,7 +383,7 @@ export async function generateFinalRoutine(
   try {
     const abortSignal = createAiAbortSignal(AI_ROUTINE_TIMEOUT_MS);
     const { object } = await generateObject({
-      model: aiProvider.chat("nvidia/nemotron-3.5-super-vl:free"),
+      model: getAiModel(),
       abortSignal,
       maxRetries: 0,
       schema: aiTreatmentPlanSchema,
@@ -433,7 +433,7 @@ export async function rescheduleTreatmentPlan(
   try {
     const abortSignal = createAiAbortSignal(AI_RESCHEDULE_TIMEOUT_MS);
     const { object } = await generateObject({
-      model: aiProvider.chat("nvidia/nemotron-3.5-super-vl:free"),
+      model: getAiModel(),
       abortSignal,
       maxRetries: 0,
       schema: rescheduledScheduleSchema,

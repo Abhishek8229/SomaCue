@@ -13,7 +13,7 @@ export const COMPARISON_ROWS: ReadonlyArray<{ feature: string; free: string; pro
   },
   {
     feature: "Rehab Companion",
-    free: "3 messages",
+    free: "3 a day, 10 in total during your first 7 days",
     pro: "Unlimited chat (practically unlimited; fair-use limits apply if abused)",
   },
   { feature: "3D movement stage", free: "Full controls", pro: "Full controls" },

@@ -60,6 +60,7 @@ describe("landing pricing section", () => {
     expect(rows).toHaveLength(COMPARISON_ROWS.length);
     expect(rows.map((row) => within(row).getByRole("rowheader").textContent)).toEqual(["Discovery triage", "Daily schedule", "Rehab Companion", "3D movement stage"]);
     expect(table).toHaveTextContent("Week 1 only (Days 1–7)");
+    expect(table).toHaveTextContent("3 a day, 10 in total during your first 7 days");
     expect(table).toHaveTextContent("Unlimited chat (practically unlimited; fair-use limits apply if abused)");
     expect(table).not.toHaveTextContent(/pain override/i);
 

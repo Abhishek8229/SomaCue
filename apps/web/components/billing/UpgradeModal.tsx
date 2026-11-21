@@ -25,7 +25,8 @@ const COPY: Record<UpgradeReason, { title: string; reason: string }> = {
   },
   companion: {
     title: "Keep talking with the Rehab Companion",
-    reason: "You have used your 3 free Rehab Companion messages. Pro removes that limit.",
+    reason:
+      "Free includes up to 10 Rehab Companion messages during your first 7 days, 3 a day. Pro removes those limits for unlimited chat, with fair use applying.",
   },
   renew: {
     title: "Renew SomaCue Pro",
@@ -33,7 +34,7 @@ const COPY: Record<UpgradeReason, { title: string; reason: string }> = {
   },
   general: {
     title: "Upgrade to SomaCue Pro",
-    reason: "A full schedule, unlimited re-analysis and Rehab Companion chat. Pick the length that fits your plan.",
+    reason: "A full schedule, unlimited re-analysis and unlimited Rehab Companion chat. Pick the length that fits your plan.",
   },
 };
 export type UpgradeModalProps = {

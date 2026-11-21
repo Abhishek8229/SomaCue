@@ -1,9 +1,9 @@
 import { streamText } from "ai";
 import { z } from "zod";
-import { chatProvider, CHAT_MODEL } from "@/lib/ai/client";
+import { AiConfigError, getChatModel } from "@/lib/ai/client";
 import { getCurrentUser } from "@/lib/auth/session";
-import { checkProCompanionLimits, countCompanionMessages, getUserPlan, proRequiredResponse } from "@/lib/billing/entitlements";
-import { canSendCompanionMessage, PLAN_LIMITS, proRequired } from "@/lib/billing/plans";
+import { getCompanionAllowance, getUserPlan, proRequiredResponse } from "@/lib/billing/entitlements";
+import { messagesLeft, proRequired, type CompanionUsage } from "@/lib/billing/plans";
 import {
   buildSystemPrompt,
   CHAT_LIMITS,
@@ -29,6 +29,17 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 }
 
+/** The counter, as response headers: the chat panel reads these after every message. */
+function usageHeaders(usage: CompanionUsage): Record<string, string> {
+  return {
+    "X-Chat-Remaining": String(messagesLeft(usage)),
+    ...(usage.dailyLeft === null ? {} : { "X-Chat-Daily-Left": String(usage.dailyLeft) }),
+    ...(usage.weeklyLeft === null ? {} : { "X-Chat-Weekly-Left": String(usage.weeklyLeft) }),
+    ...(usage.totalLeft === null ? {} : { "X-Chat-Total-Left": String(usage.totalLeft) }),
+    ...(usage.nextSlotAt ? { "X-Chat-Next-Slot": usage.nextSlotAt } : {}),
+    ...(usage.windowEndsAt ? { "X-Chat-Window-Ends": usage.windowEndsAt } : {}),
+  };
+}
 
 /** The report must belong to the user; null means the pre-intake conversation. */
 async function ownsReport(patientId: string, reportId: string | null) {
@@ -58,23 +69,24 @@ export async function GET(request: Request) {
   if (!(await ownsReport(user.id, reportId))) return json({ error: "Conversation not found." }, 404);
 
   const plan = await getUserPlan(user.id);
-  const [rows, proLimit, sentTotal] = await Promise.all([
+  const [rows, check] = await Promise.all([
     prisma.chatMessage.findMany({
       where: { patientId: user.id, clinicalReportId: reportId, clearedAt: null },
       orderBy: { createdAt: "asc" },
       take: 100,
       select: { id: true, role: true, content: true, guard: true, createdAt: true },
     }),
-    plan === "pro" ? checkProCompanionLimits(user.id) : Promise.resolve(null),
-    plan === "free" ? countCompanionMessages(user.id) : Promise.resolve(0),
+    getCompanionAllowance(user.id, plan),
   ]);
 
   return json({
     messages: rows,
     plan,
-    // Free: what is left of the 3. Pro: what fits before a fair-use pause; null while paused,
-    // so the box stays usable and the next message gets the pause explanation.
-    remaining: plan === "free" ? Math.max(0, PLAN_LIMITS.free.companionMessages - sentTotal) : proLimit?.allowed ? proLimit.remaining : null,
+    // Messages left right now: today's, and on Free also what is left of the 10. `usage` has the detail.
+    remaining: messagesLeft(check.usage),
+    usage: check.usage,
+    // Why the next message would be refused, or null: "daily", "weekly", "total" or "window_ended".
+    limit: check.verdict.allowed ? null : check.verdict.reason,
     maxChars: CHAT_LIMITS.maxMessageChars,
   });
 }
@@ -92,38 +104,33 @@ export async function POST(request: Request) {
 
   if (!(await ownsReport(user.id, reportId))) return json({ error: "Conversation not found." }, 404);
 
-  // Free allows three messages in total. A warning-sign (red flag) reply is a safety
-  // message that costs nothing, so it is never held back by the plan.
+  // Free: 3 messages in any rolling 24 hours, 10 in total, only during the 7 days after the plan was
+  // made. Pro: a fair-use limit of 50 messages in any rolling 7 days. The counts come from stored messages, so reloading or clearing the
+  // chat resets nothing. A warning-sign (red flag) reply is a safety message that costs nothing,
+  // so it is never held back by any limit.
   const plan = await getUserPlan(user.id);
-  const sentTotal = plan === "free" ? await countCompanionMessages(user.id) : 0;
+  const check = await getCompanionAllowance(user.id, plan);
   const isSafetyReply = screen.action === "guard" && screen.guard === "red_flag";
-  if (plan === "free" && !isSafetyReply && !canSendCompanionMessage(plan, sentTotal)) {
-    return proRequiredResponse(proRequired("companion"), { "X-Chat-Remaining": "0" });
-  }
-
-  // Pro has no plan limit, only rolling fair use: 25 messages sent continuously, 30 in 24 hours.
-  // The times come from the stored messages, so reloading or clearing the chat does not reset them.
-  let remainingAfter: number;
-  if (plan === "free") {
-    remainingAfter = Math.max(0, PLAN_LIMITS.free.companionMessages - sentTotal - 1);
-  } else {
-    const limit = await checkProCompanionLimits(user.id);
-    if (!limit.allowed) {
+  if (!check.verdict.allowed && !isSafetyReply) {
+    const { verdict } = check;
+    if (verdict.reason === "daily" || verdict.reason === "weekly") {
       return json(
         {
-          error: companionLimitReply(limit),
+          error: companionLimitReply(verdict),
           guard: "rate_limit" satisfies ChatGuard,
-          reason: limit.reason,
-          retryAt: limit.retryAt.toISOString(),
+          reason: verdict.reason,
+          retryAt: verdict.retryAt.toISOString(),
           remaining: 0,
+          usage: check.usage,
         },
         429,
-        { "Retry-After": String(limit.retryAfterSeconds), "X-Chat-Remaining": "0" },
+        { "Retry-After": String(verdict.retryAfterSeconds), ...usageHeaders(check.usage), "X-Chat-Remaining": "0" },
       );
     }
-    remainingAfter = Math.max(0, limit.remaining - 1);
+    // Free: all 10 used, or the 7-day window is over. Only Pro lifts that.
+    return proRequiredResponse(proRequired("companion"), { ...usageHeaders(check.usage), "X-Chat-Remaining": "0", "X-Chat-Block": verdict.reason });
   }
-  const remaining = String(remainingAfter);
+  const usageAfter = usageHeaders(check.after);
   const text = screen.action === "allow" ? screen.text : body.data.message.replace(/\s+/g, " ").trim();
   const conversation = { patientId: user.id, clinicalReportId: reportId };
 
@@ -140,7 +147,7 @@ export async function POST(request: Request) {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-store",
         "X-Chat-Guard": screen.guard,
-        "X-Chat-Remaining": remaining,
+        ...usageAfter,
       },
     });
   }
@@ -156,6 +163,19 @@ export async function POST(request: Request) {
   ]);
   if (!context) return json({ error: "Conversation not found." }, 404);
 
+  // Read the AI settings before saving anything, so a misconfigured server neither stores the
+  // message nor counts it against the limits. Guarded replies above never need the AI.
+  let chatModel: ReturnType<typeof getChatModel>;
+  try {
+    chatModel = getChatModel();
+  } catch (error) {
+    if (error instanceof AiConfigError) {
+      console.error(`[SomaCue chat] ${error.message}`);
+      return json({ error: "The Rehab Companion is not available right now. Please try again later." }, 503);
+    }
+    throw error;
+  }
+
   await prisma.chatMessage.create({ data: { ...conversation, role: "user", content: text } });
 
   const previous = trimHistory(
@@ -166,7 +186,7 @@ export async function POST(request: Request) {
   );
 
   const result = streamText({
-    model: chatProvider.chat(CHAT_MODEL),
+    model: chatModel,
     system: buildSystemPrompt(context),
     messages: [...previous, { role: "user", content: text }],
     maxOutputTokens: CHAT_LIMITS.maxOutputTokens,
@@ -189,7 +209,7 @@ export async function POST(request: Request) {
   });
 
   return result.toTextStreamResponse({
-    headers: { "Cache-Control": "no-store", "X-Chat-Remaining": remaining },
+    headers: { "Cache-Control": "no-store", ...usageAfter },
   });
 }
 

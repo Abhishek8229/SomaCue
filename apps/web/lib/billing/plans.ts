@@ -39,17 +39,24 @@ export const PLAN_WINDOW_ENDED = "PLAN_WINDOW_ENDED" as const;
 
 export type ProRequired = { error: typeof PRO_REQUIRED; feature: ProFeature };
 
-/** Rehab Companion limits. Free is a lifetime total; Pro has rolling fair-use limits. */
+/**
+ * Rehab Companion limits, counted from the user's own messages (blocked and cleared ones included).
+ * Free: 3 messages in any rolling 24 hours, and 10 in total, only during the 7 days after the plan
+ * was made. Pro: no daily limit and no total; a fair-use limit of 50 messages in any rolling 7 days
+ * (168 hours) keeps the service reliable for everyone.
+ */
 export const COMPANION_LIMITS = {
-  freeTotal: 3,
-  /** Pro: most messages sent continuously, each within `proBurstGapMs` of the last */
-  proBurstMessages: 25,
-  proBurstGapMs: 10 * 60_000,
-  /** Pro: most messages in any rolling window */
-  proWindowMessages: 30,
-  proWindowMs: 24 * 3_600_000,
+  /** Free: messages in any rolling `dayMs` */
+  perDay: 3,
+  dayMs: 24 * 3_600_000,
+  /** Free: messages in total */
+  freeTotal: 10,
+  /** Free: the access window, in days from the day the plan was made */
+  freeWindowDays: 7,
+  /** Pro: messages in any rolling `weekMs` */
+  proPerWeek: 50,
+  weekMs: 7 * 24 * 3_600_000,
 } as const;
-
 export const PLAN_LIMITS = {
   free: {
     /** completed Discovery triage analyses */
@@ -197,57 +204,99 @@ export function usageSummary(plan: Plan, used: { analyses: number; companionMess
 
 export type UsageSummary = ReturnType<typeof usageSummary>;
 
-export type CompanionLimitResult =
-  /** `remaining` is how many more messages fit before either limit is reached */
-  | { allowed: true; remaining: number }
-  | { allowed: false; reason: "burst" | "window"; retryAt: Date; retryAfterSeconds: number };
-
 /**
- * Pro fair use, from the times of the user's recent messages (any order; blocked and cleared
- * ones included). Two rolling limits: at most 25 messages sent continuously (each within 10
- * minutes of the one before), and at most 30 in any 24 hours. When both apply, the later reset wins.
+ * What the chat counter shows. Dates are ISO strings so this can be sent to the browser as is.
+ * Free has the daily and total counters; Pro has only the weekly fair-use one (and the chat panel
+ * shows it only when it is reached).
  */
-export function evaluateProCompanionLimits(sentAt: readonly Date[], now: Date = new Date()): CompanionLimitResult {
-  const nowMs = now.getTime();
-  const times = sentAt
-    .map((date) => date.getTime())
-    .filter((time) => time <= nowMs)
-    .sort((a, b) => b - a);
+export type CompanionUsage = {
+  dailyLimit: number | null;
+  dailyLeft: number | null;
+  weeklyLimit: number | null;
+  weeklyLeft: number | null;
+  /** when a slot opens, once the limit that applies is used up */
+  nextSlotAt: string | null;
+  /** Free only: the total cap and what is left of it */
+  totalLimit: number | null;
+  totalLeft: number | null;
+  /** Free only: when the 7-day window ends, once there is a plan */
+  windowEndsAt: string | null;
+};
 
-  const blocks: Array<{ reason: "burst" | "window"; retryAtMs: number }> = [];
+export type CompanionVerdict =
+  | { allowed: true }
+  /** Free: today's 3 are used; Pro: the 50 for this week are used. Wait for the next slot. */
+  | { allowed: false; reason: "daily" | "weekly"; retryAt: Date; retryAfterSeconds: number }
+  /** Free: all 10 are used */
+  | { allowed: false; reason: "total" }
+  /** Free: the 7-day window is over */
+  | { allowed: false; reason: "window_ended" };
 
-  const inWindow = times.filter((time) => time > nowMs - COMPANION_LIMITS.proWindowMs);
-  if (inWindow.length >= COMPANION_LIMITS.proWindowMessages) {
-    // Sending is possible again once the message that fills the 30th place is a day old.
-    blocks.push({ reason: "window", retryAtMs: inWindow[COMPANION_LIMITS.proWindowMessages - 1] + COMPANION_LIMITS.proWindowMs });
-  }
-
-  let streak = 0;
-  let previous = nowMs;
-  for (const time of times) {
-    if (previous - time > COMPANION_LIMITS.proBurstGapMs) break;
-    streak += 1;
-    previous = time;
-  }
-  if (streak >= COMPANION_LIMITS.proBurstMessages) {
-    // A gap of more than 10 minutes starts a new run.
-    blocks.push({ reason: "burst", retryAtMs: times[0] + COMPANION_LIMITS.proBurstGapMs + 1000 });
-  }
-
-  if (blocks.length === 0) {
-    const windowLeft = COMPANION_LIMITS.proWindowMessages - inWindow.length;
-    const burstLeft = COMPANION_LIMITS.proBurstMessages - streak;
-    return { allowed: true, remaining: Math.max(0, Math.min(windowLeft, burstLeft)) };
-  }
-  const worst = blocks.reduce((a, b) => (b.retryAtMs > a.retryAtMs ? b : a));
-  return {
-    allowed: false,
-    reason: worst.reason,
-    retryAt: new Date(worst.retryAtMs),
-    retryAfterSeconds: Math.max(1, Math.ceil((worst.retryAtMs - nowMs) / 1000)),
-  };
+export type CompanionAllowance = { verdict: CompanionVerdict; usage: CompanionUsage };
+/** When the Free 7-day Companion window ends: 7 days after the plan was made. */
+export function freeWindowEnd(planCreatedAt: Date): Date {
+  return new Date(planCreatedAt.getTime() + COMPANION_LIMITS.freeWindowDays * PRO_DAY_MS);
 }
 
+/**
+ * Whether the next Companion message may be sent, and the numbers for the counter.
+ * `sentAt` is the times of the user's recent messages (any order); only the window that applies
+ * matters: 24 hours for Free, 7 days for Pro. Free is checked window, then total, then daily;
+ * Pro only has the weekly fair-use limit.
+ */
+export function evaluateCompanionAllowance(
+  input: { plan: Plan; sentAt: readonly Date[]; sentTotal: number; freeWindowEndsAt: Date | null },
+  now: Date = new Date(),
+): CompanionAllowance {
+  const nowMs = now.getTime();
+  const free = input.plan === "free";
+  const windowMs = free ? COMPANION_LIMITS.dayMs : COMPANION_LIMITS.weekMs;
+  const limit = free ? COMPANION_LIMITS.perDay : COMPANION_LIMITS.proPerWeek;
+
+  const recent = input.sentAt
+    .map((date) => date.getTime())
+    .filter((time) => time <= nowMs && time > nowMs - windowMs)
+    .sort((a, b) => b - a);
+
+  const left = Math.max(0, limit - recent.length);
+  // The slot that opens next is the one held by the oldest of the messages that count.
+  const nextSlotMs = left === 0 ? recent[limit - 1] + windowMs : null;
+
+  const usage: CompanionUsage = {
+    dailyLimit: free ? limit : null,
+    dailyLeft: free ? left : null,
+    weeklyLimit: free ? null : limit,
+    weeklyLeft: free ? null : left,
+    nextSlotAt: nextSlotMs === null ? null : new Date(nextSlotMs).toISOString(),
+    totalLimit: free ? COMPANION_LIMITS.freeTotal : null,
+    totalLeft: free ? Math.max(0, COMPANION_LIMITS.freeTotal - input.sentTotal) : null,
+    windowEndsAt: free && input.freeWindowEndsAt ? input.freeWindowEndsAt.toISOString() : null,
+  };
+
+  if (free && input.freeWindowEndsAt && nowMs >= input.freeWindowEndsAt.getTime()) {
+    return { verdict: { allowed: false, reason: "window_ended" }, usage };
+  }
+  if (free && input.sentTotal >= COMPANION_LIMITS.freeTotal) {
+    return { verdict: { allowed: false, reason: "total" }, usage };
+  }
+  if (nextSlotMs !== null) {
+    return {
+      verdict: {
+        allowed: false,
+        reason: free ? "daily" : "weekly",
+        retryAt: new Date(nextSlotMs),
+        retryAfterSeconds: Math.max(1, Math.ceil((nextSlotMs - nowMs) / 1000)),
+      },
+      usage,
+    };
+  }
+  return { verdict: { allowed: true }, usage };
+}
+/** The most messages left right now: the smallest of the counters that apply. */
+export function messagesLeft(usage: CompanionUsage): number {
+  const counts = [usage.dailyLeft, usage.weeklyLeft, usage.totalLeft].filter((count): count is number => count !== null);
+  return counts.length > 0 ? Math.min(...counts) : 0;
+}
 export const EXPIRY_WARNING_DAYS = 7;
 
 export type ExpiryNotice =

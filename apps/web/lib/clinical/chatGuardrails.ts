@@ -24,22 +24,31 @@ export const OUT_OF_SCOPE_REPLY =
 
 const SAFETY_REMINDER = "If something feels wrong during an exercise, stop and use Pain Override. It always works.";
 
+function plural(count: number, unit: string) {
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+}
+
 function waitPhrase(seconds: number) {
   const minutes = Math.ceil(seconds / 60);
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  if (minutes < 60) return plural(minutes, "minute");
   const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return `${hours} hour${hours === 1 ? "" : "s"}${rest ? ` ${rest} minute${rest === 1 ? "" : "s"}` : ""}`;
+  const restMinutes = minutes % 60;
+  if (hours < 24) return `${plural(hours, "hour")}${restMinutes ? ` ${plural(restMinutes, "minute")}` : ""}`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return `${plural(days, "day")}${restHours ? ` ${plural(restHours, "hour")}` : ""}`;
 }
 
-/** The friendly 429 text for a Pro user who has hit a fair-use limit. */
-export function companionLimitReply(limit: { reason: "burst" | "window"; retryAt: Date; retryAfterSeconds: number }) {
-  const at = `${limit.retryAt.toISOString().slice(11, 16)} UTC`;
-  return limit.reason === "burst"
-    ? `You've sent ${COMPANION_LIMITS.proBurstMessages} messages in a row. Take a short break: the Rehab Companion is ready again in about ${waitPhrase(limit.retryAfterSeconds)} (${at}). ${SAFETY_REMINDER}`
-    : `You've used ${COMPANION_LIMITS.proWindowMessages} messages in the last 24 hours. Your next message opens up in about ${waitPhrase(limit.retryAfterSeconds)} (${at}). ${SAFETY_REMINDER}`;
-}
+const SLOT_TIME = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC", hour12: false });
 
+/** The friendly 429 text for a user whose limit is used up: Free's 3 for today, or Pro's fair-use 50 for the week. */
+export function companionLimitReply(limit: { reason: "daily" | "weekly"; retryAt: Date; retryAfterSeconds: number }) {
+  const wait = waitPhrase(limit.retryAfterSeconds);
+  const at = `${SLOT_TIME.format(limit.retryAt).replace(",", "")} UTC`;
+  return limit.reason === "weekly"
+    ? `You've reached the Rehab Companion's fair-use limit of ${COMPANION_LIMITS.proPerWeek} messages in 7 days. Your next message opens up in about ${wait} (${at}). ${SAFETY_REMINDER}`
+    : `You've used your ${COMPANION_LIMITS.perDay} Rehab Companion messages for today. Your next message opens up in about ${wait} (${at}). ${SAFETY_REMINDER}`;
+}
 export function redFlagReply(flags: string[]) {
   const list = flags.join("; ").toLowerCase();
   return `Please stop exercising now. What you describe (${list}) can be a sign of a serious problem that needs an in-person medical evaluation, not online rehab. Contact a doctor or physiotherapist today. If symptoms are severe or getting worse quickly, call your local emergency number or go to the nearest emergency department.`;

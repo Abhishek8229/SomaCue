@@ -116,13 +116,18 @@ export function ManageSubscription({ billing, error, notice, onRenew, onUpgrade,
           </p>
 
           {isPro ? (
-            <p className="mt-2 text-xs leading-relaxed text-white/70">
-              {endDate
-                ? `Pro access until ${endDate}${daysLeft !== null ? ` (${daysLeft} day${daysLeft === 1 ? "" : "s"} left)` : ""}.`
-                : "Pro access is active."}{" "}
-              {billing.tier ? `Your last purchase was ${PRO_TIERS[billing.tier].name} (${PRO_TIERS[billing.tier].label}). ` : ""}
-              Pro does not renew by itself, so you are never charged again unless you choose to renew.
-            </p>
+            <>
+              <p className="mt-2 text-xs leading-relaxed text-white/70">
+                {endDate
+                  ? `Pro access until ${endDate}${daysLeft !== null ? ` (${daysLeft} day${daysLeft === 1 ? "" : "s"} left)` : ""}.`
+                  : "Pro access is active."}{" "}
+                {billing.tier ? `Your last purchase was ${PRO_TIERS[billing.tier].name} (${PRO_TIERS[billing.tier].label}). ` : ""}
+                Pro does not renew by itself, so you are never charged again unless you choose to renew.
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-white/70" data-testid="pro-companion-line">
+                Rehab Companion: unlimited chat (fair-use limits apply).
+              </p>
+            </>
           ) : (
             <ul className="mt-3 space-y-1.5 text-xs text-white/70">
               <li>
@@ -130,7 +135,7 @@ export function ManageSubscription({ billing, error, notice, onRenew, onUpgrade,
               </li>
               <li>Schedule: Week 1 only (Days 1–{PLAN_LIMITS.free.scheduleDays})</li>
               <li>
-                Rehab Companion: {usage.companionMessagesUsed} of {PLAN_LIMITS.free.companionMessages} messages used
+                Rehab Companion: {usage.companionMessagesUsed} of {PLAN_LIMITS.free.companionMessages} messages used (3 a day)
               </li>
             </ul>
           )}

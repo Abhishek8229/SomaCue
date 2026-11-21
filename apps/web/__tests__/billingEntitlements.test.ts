@@ -12,12 +12,15 @@ const db = vi.hoisted(() => ({
   messages: 0,
   /** createdAt of the user's recent chat messages */
   recent: [] as Date[],
+  /** when the user's latest treatment plan was made, or null */
+  planCreatedAt: null as Date | null,
 }));
 
 vi.mock("@/lib/db/prisma", () => ({
   prisma: {
     subscription: { findUnique: async () => db.subscription },
     clinicalReport: { count: async () => db.analyses },
+    treatmentPlan: { findFirst: async () => (db.planCreatedAt ? { createdAt: db.planCreatedAt } : null) },
     chatMessage: {
       count: async () => db.messages,
       findMany: async ({ take }: { take: number }) =>
@@ -33,8 +36,7 @@ vi.mock("@/lib/db/prisma", () => ({
 import * as entitlements from "@/lib/billing/entitlements";
 import {
   checkAnalysisAllowed,
-  checkCompanionAllowed,
-  checkProCompanionLimits,
+  getCompanionAllowance,
   checkScheduleDayAllowed,
   getBillingStatus,
   proRequiredResponse,
@@ -44,7 +46,10 @@ import {
   accessStartFor,
   canRunAnalysis,
   canSendCompanionMessage,
-  evaluateProCompanionLimits,
+  COMPANION_LIMITS,
+  evaluateCompanionAllowance,
+  freeWindowEnd,
+  messagesLeft,
   expiryNotice,
   isScheduleDayAllowed,
   PLAN_LIMITS,
@@ -61,7 +66,6 @@ const MIN = 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const sub = (status: string, cancelAtPeriodEnd = false, currentPeriodEnd: Date | null = null) => ({ status, cancelAtPeriodEnd, currentPeriodEnd });
-const ago = (ms: number) => new Date(NOW.getTime() - ms);
 
 describe("resolvePlan", () => {
   it("is Free with no subscription", () => {
@@ -96,11 +100,11 @@ describe("resolvePlan", () => {
 });
 
 describe("plan limits", () => {
-  it("Free: 1 analysis, Week 1 only (Days 1 to 7), 3 Companion messages", () => {
+  it("Free: 1 analysis, Week 1 only (Days 1 to 7), 10 Companion messages in total", () => {
     expect(canRunAnalysis("free", 0)).toBe(true);
     expect(canRunAnalysis("free", 1)).toBe(false);
-    expect(canSendCompanionMessage("free", 2)).toBe(true);
-    expect(canSendCompanionMessage("free", 3)).toBe(false);
+    expect(canSendCompanionMessage("free", 9)).toBe(true);
+    expect(canSendCompanionMessage("free", 10)).toBe(false);
     expect(isScheduleDayAllowed("free", 7)).toBe(true);
     expect(isScheduleDayAllowed("free", 8)).toBe(false);
     // Free cannot reach past Day 7 even in a very long plan.
@@ -140,7 +144,7 @@ describe("plan limits", () => {
   });
 
   it("reports remaining Free usage, and no counted limits for Pro", () => {
-    expect(usageSummary("free", { analyses: 1, companionMessages: 2 })).toMatchObject({
+    expect(usageSummary("free", { analyses: 1, companionMessages: 9 })).toMatchObject({
       analysesRemaining: 0,
       companionMessagesRemaining: 1,
       scheduleDays: 7,
@@ -201,70 +205,158 @@ describe("expiry notices", () => {
   });
 });
 
-describe("Rehab Companion Pro fair use", () => {
-  /** n messages spaced `gapMs` apart, the newest `lastAgoMs` ago */
-  const run = (n: number, gapMs: number, lastAgoMs = MIN) => Array.from({ length: n }, (_, i) => ago(lastAgoMs + i * gapMs));
+describe("Rehab Companion limits", () => {
+  const ago = (ms: number) => new Date(NOW.getTime() - ms);
+  const free = (extra: Partial<Parameters<typeof evaluateCompanionAllowance>[0]> = {}) => ({
+    plan: "free" as const,
+    sentAt: [] as Date[],
+    sentTotal: 0,
+    freeWindowEndsAt: null,
+    ...extra,
+  });
+  const pro = (sentAt: Date[] = []) => ({ plan: "pro" as const, sentAt, sentTotal: 0, freeWindowEndsAt: null });
 
-  it("allows a normal chat and says how many messages fit", () => {
-    expect(evaluateProCompanionLimits([], NOW)).toEqual({ allowed: true, remaining: 25 });
-    expect(evaluateProCompanionLimits(run(10, MIN), NOW)).toEqual({ allowed: true, remaining: 15 });
+  it("has the numbers: Free 3 a day and 10 in the 7 days, Pro 50 in any 7 days", () => {
+    expect(COMPANION_LIMITS).toMatchObject({ perDay: 3, freeTotal: 10, freeWindowDays: 7, proPerWeek: 50 });
+    expect(COMPANION_LIMITS.weekMs).toBe(168 * HOUR);
+    expect(PLAN_LIMITS.free.companionMessages).toBe(10);
   });
 
-  it("allows the 25th message in a continuous run and blocks the 26th", () => {
-    expect(evaluateProCompanionLimits(run(24, MIN), NOW)).toMatchObject({ allowed: true, remaining: 1 });
-    const blocked = evaluateProCompanionLimits(run(25, MIN), NOW);
-    expect(blocked).toMatchObject({ allowed: false, reason: "burst" });
-    // The run restarts once there has been more than 10 minutes of quiet.
-    if (!blocked.allowed) expect(blocked.retryAt.getTime()).toBe(ago(MIN).getTime() + 10 * MIN + 1000);
+  describe("Pro: a fair-use limit of 50 messages in any rolling 7 days (168 hours)", () => {
+    /** n messages, one every `gapMs`, the newest `lastAgoMs` ago */
+    const run = (n: number, gapMs: number, lastAgoMs = HOUR) => Array.from({ length: n }, (_, i) => ago(lastAgoMs + i * gapMs));
+
+    it("has no daily limit: far more than 3 in a day is fine", () => {
+      const result = evaluateCompanionAllowance(pro(run(20, MIN)), NOW);
+      expect(result.verdict.allowed).toBe(true);
+      expect(result.usage).toMatchObject({ dailyLimit: null, dailyLeft: null, weeklyLimit: 50, weeklyLeft: 30, totalLimit: null, totalLeft: null, windowEndsAt: null });
+    });
+
+    it("allows the 50th message in a week and blocks the 51st", () => {
+      expect(evaluateCompanionAllowance(pro(run(49, HOUR / 4)), NOW)).toMatchObject({ verdict: { allowed: true }, usage: { weeklyLeft: 1 } });
+      const blocked = evaluateCompanionAllowance(pro(run(50, HOUR / 4)), NOW);
+      expect(blocked.verdict).toMatchObject({ allowed: false, reason: "weekly" });
+      expect(blocked.usage).toMatchObject({ weeklyLeft: 0 });
+    });
+
+    it("opens the next slot 168 hours after the oldest of the 50, and says how long that is", () => {
+      // the oldest of the 50 counted messages was sent 3 days ago
+      const sent = [...run(49, HOUR / 4), ago(3 * DAY)];
+      const result = evaluateCompanionAllowance(pro(sent), NOW);
+      expect(result.usage.nextSlotAt).toBe(new Date(NOW.getTime() + 4 * DAY).toISOString());
+      expect(result.verdict).toMatchObject({ allowed: false, reason: "weekly", retryAfterSeconds: 4 * 24 * 3600 });
+      if (!result.verdict.allowed && result.verdict.reason === "weekly") {
+        expect(result.verdict.retryAt.getTime()).toBe(NOW.getTime() + 4 * DAY);
+      }
+    });
+
+    it("is a rolling 168 hours: a message sent a week ago no longer counts", () => {
+      const fresh = run(49, HOUR / 4);
+      expect(evaluateCompanionAllowance(pro([...fresh, ago(7 * DAY)]), NOW).verdict.allowed).toBe(true);
+      expect(evaluateCompanionAllowance(pro([...fresh, ago(7 * DAY - MIN)]), NOW).verdict.allowed).toBe(false);
+    });
+
+    it("has no total cap and no 7-day end, however many were sent before", () => {
+      expect(evaluateCompanionAllowance({ ...pro(), sentTotal: 5000, freeWindowEndsAt: ago(30 * DAY) }, NOW).verdict.allowed).toBe(true);
+    });
+
+    it("counts only the messages in the last week when working out what is left", () => {
+      const old = Array.from({ length: 80 }, (_, i) => ago(8 * DAY + i * HOUR));
+      expect(evaluateCompanionAllowance(pro(old), NOW).usage.weeklyLeft).toBe(50);
+    });
+  });
+  describe("Free: 3 a day, and 10 in total during the 7 days after the plan was made", () => {
+    it("shows both counters", () => {
+      const result = evaluateCompanionAllowance(free({ sentAt: [ago(HOUR)], sentTotal: 4, freeWindowEndsAt: new Date(NOW.getTime() + 3 * DAY) }), NOW);
+      expect(result.verdict.allowed).toBe(true);
+      expect(result.usage).toMatchObject({ dailyLimit: 3, dailyLeft: 2, totalLimit: 10, totalLeft: 6, windowEndsAt: new Date(NOW.getTime() + 3 * DAY).toISOString() });
+      expect(messagesLeft(result.usage)).toBe(2);
+      expect(messagesLeft({ ...result.usage, dailyLeft: 3, totalLeft: 1 })).toBe(1);
+    });
+
+    it("blocks the fourth message in a day with the daily reason, even with total left", () => {
+      const result = evaluateCompanionAllowance(free({ sentAt: [ago(MIN), ago(2 * MIN), ago(3 * MIN)], sentTotal: 3 }), NOW);
+      expect(result.verdict).toMatchObject({ allowed: false, reason: "daily" });
+      expect(result.usage.totalLeft).toBe(7);
+    });
+
+    it("allows the 10th message in total and blocks the 11th, however long ago the others were", () => {
+      expect(evaluateCompanionAllowance(free({ sentTotal: 9 }), NOW).verdict.allowed).toBe(true);
+      expect(evaluateCompanionAllowance(free({ sentTotal: 10 }), NOW).verdict).toEqual({ allowed: false, reason: "total" });
+      expect(evaluateCompanionAllowance(free({ sentTotal: 11 }), NOW).usage.totalLeft).toBe(0);
+    });
+
+    it("blocks after the 7-day window ends, even with messages left", () => {
+      const ended = evaluateCompanionAllowance(free({ sentTotal: 2, freeWindowEndsAt: ago(MIN) }), NOW);
+      expect(ended.verdict).toEqual({ allowed: false, reason: "window_ended" });
+      expect(ended.usage.totalLeft).toBe(8);
+      expect(evaluateCompanionAllowance(free({ sentTotal: 2, freeWindowEndsAt: new Date(NOW.getTime() + MIN) }), NOW).verdict.allowed).toBe(true);
+      // the window ends exactly at its end time
+      expect(evaluateCompanionAllowance(free({ freeWindowEndsAt: NOW }), NOW).verdict).toEqual({ allowed: false, reason: "window_ended" });
+    });
+
+    it("has no window before a plan exists: chatting before the first analysis is allowed", () => {
+      expect(evaluateCompanionAllowance(free({ sentTotal: 1, freeWindowEndsAt: null }), NOW)).toMatchObject({ verdict: { allowed: true }, usage: { windowEndsAt: null } });
+    });
+
+    it("reports the window as 7 days after the plan was made", () => {
+      expect(freeWindowEnd(NOW).getTime() - NOW.getTime()).toBe(7 * DAY);
+    });
   });
 
-  it("counts messages as continuous only while each is within 10 minutes of the next", () => {
-    // 25 messages, but a 11-minute silence splits them: the current run is short.
-    const split = [...run(10, MIN), ...run(15, MIN, MIN + 10 * MIN + 11 * MIN)];
-    expect(evaluateProCompanionLimits(split, NOW)).toMatchObject({ allowed: true });
-    // Exactly 10 minutes apart still counts as continuous.
-    expect(evaluateProCompanionLimits(run(25, 10 * MIN, 5 * MIN), NOW)).toMatchObject({ allowed: false, reason: "burst" });
-    // The newest message is already older than 10 minutes: a new run starts at zero.
-    expect(evaluateProCompanionLimits(run(25, MIN, 11 * MIN), NOW)).toMatchObject({ allowed: true, remaining: 5 });
-  });
+  describe("read from the database", () => {
+    beforeEach(() => {
+      db.subscription = null;
+      db.messages = 0;
+      db.recent = [];
+      db.planCreatedAt = null;
+    });
 
-  it("allows 30 messages in 24 hours when spaced out, and blocks the 31st with the reset time", () => {
-    const spaced = (n: number) => Array.from({ length: n }, (_, i) => ago(HOUR / 2 + i * 40 * MIN)); // every 40 minutes
-    expect(evaluateProCompanionLimits(spaced(29), NOW)).toMatchObject({ allowed: true });
-    const blocked = evaluateProCompanionLimits(spaced(30), NOW);
-    expect(blocked).toMatchObject({ allowed: false, reason: "window" });
-    if (!blocked.allowed) {
-      // Frees up when the 30th-newest message is 24 hours old.
-      expect(blocked.retryAt.getTime()).toBe(spaced(30)[29].getTime() + DAY);
-      expect(blocked.retryAfterSeconds).toBe(Math.ceil((blocked.retryAt.getTime() - NOW.getTime()) / 1000));
-    }
-  });
+    it("counts a Free user's total, today's messages and the window from the latest plan", async () => {
+      db.messages = 4;
+      db.recent = [ago(HOUR)];
+      db.planCreatedAt = ago(2 * DAY);
+      const check = await getCompanionAllowance("u1", "free", NOW);
+      expect(check.verdict.allowed).toBe(true);
+      expect(check.usage).toMatchObject({ dailyLeft: 2, totalLeft: 6, windowEndsAt: new Date(NOW.getTime() + 5 * DAY).toISOString() });
+      // and as it will stand once this message is saved
+      expect(check.after).toMatchObject({ dailyLeft: 1, totalLeft: 5 });
+    });
 
-  it("does not count messages older than 24 hours", () => {
-    const old = Array.from({ length: 40 }, (_, i) => ago(DAY + HOUR + i * 5 * MIN));
-    expect(evaluateProCompanionLimits(old, NOW)).toMatchObject({ allowed: true, remaining: 25 });
-  });
+    it("blocks a Free user on Day 8, and one who used all 10", async () => {
+      db.planCreatedAt = ago(8 * DAY);
+      expect((await getCompanionAllowance("u1", "free", NOW)).verdict).toEqual({ allowed: false, reason: "window_ended" });
+      db.planCreatedAt = ago(DAY);
+      db.messages = 10;
+      expect((await getCompanionAllowance("u1", "free", NOW)).verdict).toEqual({ allowed: false, reason: "total" });
+    });
 
-  it("reports the later reset when both limits apply", () => {
-    // 30 messages one minute apart: both the burst and the 24-hour limit are hit.
-    const both = evaluateProCompanionLimits(run(30, MIN), NOW);
-    expect(both).toMatchObject({ allowed: false, reason: "window" });
-  });
+    it("gives Pro only the weekly limit, from the last 7 days of messages", async () => {
+      db.messages = 400;
+      db.planCreatedAt = ago(30 * DAY);
+      db.recent = [ago(HOUR), ago(2 * HOUR), ago(3 * DAY), ago(5 * DAY)];
+      const check = await getCompanionAllowance("u1", "pro", NOW);
+      expect(check.verdict.allowed).toBe(true);
+      expect(check.usage).toMatchObject({ dailyLimit: null, dailyLeft: null, weeklyLimit: 50, weeklyLeft: 46, totalLimit: null, totalLeft: null });
+      expect(check.after).toMatchObject({ weeklyLeft: 45 });
+    });
 
-  it("reads the stored message times from the database", async () => {
-    db.recent = run(25, MIN);
-    expect(await checkProCompanionLimits("u1", NOW)).toMatchObject({ allowed: false, reason: "burst" });
-    db.recent = [];
-    expect(await checkProCompanionLimits("u1", NOW)).toMatchObject({ allowed: true });
+    it("blocks Pro at 50 in the week and reports when the next slot opens", async () => {
+      db.recent = Array.from({ length: 50 }, (_, i) => ago(HOUR + i * HOUR));
+      const check = await getCompanionAllowance("u1", "pro", NOW);
+      expect(check.verdict).toMatchObject({ allowed: false, reason: "weekly" });
+      // the 50th newest was sent 50 hours ago, so it is 168 hours old in 118 hours
+      expect(check.usage.nextSlotAt).toBe(new Date(NOW.getTime() + 118 * HOUR).toISOString());
+    });
   });
 });
-
 describe("server checks", () => {
   beforeEach(() => {
     db.subscription = null;
     db.analyses = 0;
     db.messages = 0;
     db.recent = [];
+    db.planCreatedAt = null;
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     return () => vi.useRealTimers();
@@ -282,13 +374,6 @@ describe("server checks", () => {
     db.subscription = open();
     db.analyses = 25;
     expect(await checkAnalysisAllowed("u1")).toBeNull();
-  });
-
-  it("blocks the fourth Companion message on Free, but not the third", async () => {
-    db.messages = 2;
-    expect(await checkCompanionAllowed("u1")).toBeNull();
-    db.messages = 3;
-    expect(await checkCompanionAllowed("u1")).toEqual({ error: "PRO_REQUIRED", feature: "companion" });
   });
 
   it("blocks plan Day 8 on Free (Week 1 only) and allows it on Pro", async () => {
@@ -329,7 +414,7 @@ describe("server checks", () => {
     expect(await getBillingStatus("u1")).toMatchObject({ plan: "free", currentPeriodEnd: null, tier: null });
     db.subscription = null;
     db.analyses = 1;
-    db.messages = 3;
+    db.messages = 10;
     expect(await getBillingStatus("u1")).toMatchObject({
       plan: "free",
       status: null,

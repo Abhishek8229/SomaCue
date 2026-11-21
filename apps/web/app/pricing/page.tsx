@@ -36,7 +36,10 @@ export default async function PricingPage() {
             <li>One Discovery triage analysis</li>
             <li>The full 3D kinematic movement stage, with all controls</li>
             <li>Week 1 of your generated schedule (Days 1–{PLAN_LIMITS.free.scheduleDays})</li>
-            <li>{PLAN_LIMITS.free.companionMessages} Rehab Companion messages</li>
+            <li>
+              Rehab Companion: up to {COMPANION_LIMITS.perDay} messages a day, {PLAN_LIMITS.free.companionMessages} in total during your first{" "}
+              {COMPANION_LIMITS.freeWindowDays} days
+            </li>
             <li>Pain Override and safe plan adjustment after a flare-up, free on every plan</li>
           </ul>
           <Link className={`${styles.btn} ${styles.btnGhost}`} href="/register">
@@ -48,9 +51,9 @@ export default async function PricingPage() {
       </div>
 
       <p className={styles.fineprint}>
-        Rehab Companion fair use: Pro has no message limit by plan. To keep the service reliable for everyone, Pro allows up to{" "}
-        {COMPANION_LIMITS.proBurstMessages} messages sent in one continuous run (each within 10 minutes of the last) and{" "}
-        {COMPANION_LIMITS.proWindowMessages} messages in any 24 hours. If you reach one, the Companion tells you when it is ready again.
+        Rehab Companion limits: Free allows {COMPANION_LIMITS.perDay} messages in any 24 hours and {COMPANION_LIMITS.freeTotal} in total, during the{" "}
+        {COMPANION_LIMITS.freeWindowDays} days after your plan is made. Pro chat is unlimited in practice: to keep the service reliable for everyone, a fair-use limit of{" "}
+        {COMPANION_LIMITS.proPerWeek} messages in any {COMPANION_LIMITS.freeWindowDays} days applies. When you reach a limit, the Companion tells you when it opens again.
       </p>
 
       <table className={styles.compare}>

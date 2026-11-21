@@ -221,7 +221,7 @@ describe("GET /api/billing/status", () => {
       plan: "free",
       status: null,
       tier: null,
-      usage: { analysesRemaining: 0, companionMessagesRemaining: 1, scheduleDays: 7 },
+      usage: { analysesRemaining: 0, companionMessagesRemaining: 8, scheduleDays: 7 },
     });
   });
 
