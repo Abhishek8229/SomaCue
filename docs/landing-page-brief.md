@@ -25,7 +25,7 @@ Note: the current home page copy talks about "anatomy exploration" and selecting
 
 All steps happen on `/workspace` (`app/workspace/WorkspaceClient.tsx`, `app/workspace/WorkspaceParts.tsx`), which requires sign-in.
 
-**Step 0. Account.** Email, password (minimum 8 characters) and full name at `/register`. Every new account gets the role `patient` (`app/api/auth/register/route.ts`).
+**Step 0. Account.** One click with Continue with Google at `/register` or `/login`. Google is the only way to sign in or create an account. The name, Gmail address and profile photo are saved on the user. Every new account gets the role `patient` (`lib/auth/oauthAccount.ts`).
 
 **Step 1. 01 / Intake ("Discovery" panel, left sidebar).**
 - Two separate multi-file upload areas, each accepting images and PDFs, up to 10 files per area:
@@ -303,7 +303,7 @@ Example copy from the data:
 | Route | Status | Auth | Notes |
 | --- | --- | --- | --- |
 | `/` | Live | Public | Current marketing page (`app/page.tsx`). CTAs: "Start exploring" and "Create your workspace" go to `/register`; "Open the workspace" goes to `/workspace`; the footer links to `/login` and `/register`. The section `id="platform"` is the target of the nav's "How it works" link. To be replaced. |
-| `/register` | Live | Public; a signed-in user is redirected to `/dashboard` | Full name, email, password (8+). Always creates a `patient`. |
+| `/register` | Live | Public; a signed-in user is redirected to `/dashboard` | Continue with Google only. Always creates a `patient`. |
 | `/login` | Live | Public; a signed-in user is redirected to `/dashboard` | Honours `?from=` for redirects (relative paths only). Defaults to `/dashboard`. |
 | `/dashboard` | Live, placeholder content | Signed in | The nav labels it **"Overview"**. The content is static: "Saved plans: None yet", "Safety engine: Active". It links to `/workspace`. |
 | `/workspace` | Live, the product | Signed in | Everything in sections 1–3. |
@@ -311,15 +311,15 @@ Example copy from the data:
 | `/overview` | **Not built** | – | Only a nav label; the real route is `/dashboard`. |
 | `/pricing` | **Not built** | – | No billing, plans or payment code exists. |
 | `/about`, `/contact`, `/privacy`, `/terms`, `/security` | **Not built** | – | No legal pages exist. They'll be needed for a medical SaaS. |
-| Forgot password, email verification | **Not built** | – | |
+| Forgot password, email verification | **Not needed** | – | Google is the only credential. |
 | Clinician sign-up or portal | **Not built** | – | The `clinician` role exists in the schema and the navbar shows "Dr." for it, but there's no way to create one or any clinician view. |
 
 ### APIs and server actions
 
 | Endpoint | Method | Auth | Purpose |
 | --- | --- | --- | --- |
-| `/api/auth/register` | POST | Public | Create a patient and set the session cookie |
-| `/api/auth/login` | POST | Public | Sign in |
+| `/api/auth/google` | GET | Public | Start Google sign-in (OAuth code flow with PKCE) |
+| `/api/auth/google/callback` | GET | Public | Finish Google sign-in, save the profile, set the session cookie |
 | `/api/auth/logout` | POST | – | Clear the session cookie |
 | `/api/chat` | GET / POST / DELETE | Signed in, report owner | Load history / send a message (streamed) / clear the chat |
 | `/api/extract` | POST | Signed in | Legacy Gemini MRI-text extractor. **Not called by any UI.** |
@@ -328,7 +328,7 @@ Example copy from the data:
 | `actions/painEvent.ts` | Server actions | Signed in, plan owner | Report a Pain Override, reschedule |
 
 ### Auth details
-- Email and password, hashed with bcrypt (10 rounds).
+- Google sign-in only (OAuth 2.0 code flow with PKCE; the ID token is verified against Google's keys). There are no passwords.
 - The session is an HS256 JWT in an `httpOnly`, `sameSite=lax` cookie named `somacue_session`, valid for 14 days and `secure` in production (`lib/auth/*`).
 - `proxy.ts` (this Next.js version's middleware) protects `/dashboard` and `/workspace` by redirecting to `/login?from=…`, and sends signed-in users away from `/login` and `/register`.
 - Risk: `lib/auth/jwt.ts` falls back to a hard-coded session secret when `SESSION_SECRET` is unset, and `.env` does not set it. Fix this before any public launch.

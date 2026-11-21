@@ -20,8 +20,12 @@ vi.mock("@/lib/db/prisma", () => {
       user: {
         findUnique: async ({ where }: { where: { email?: string; googleId?: string } }) =>
           pick(where.googleId ? byField("googleId", where.googleId) : byField("email", where.email ?? "")),
-        update: async ({ where, data }: { where: { id: string }; data: { googleId: string; avatarUrl: string | null } }) => {
+        update: async ({ where, data }: { where: { id: string }; data: Partial<{ googleId: string; avatarUrl: string | null; name: string; email: string }> }) => {
           const user = [...users.values()].find((entry) => entry.id === where.id)!;
+          // the email column is unique
+          if (data.email && [...users.values()].some((entry) => entry.email === data.email && entry.id !== user.id)) {
+            throw new Error("Unique constraint failed on the fields: (`email`)");
+          }
           Object.assign(user, data);
           return pick(user);
         },
@@ -233,7 +237,7 @@ describe("account linking", () => {
     expect(stored.avatarUrl).toBe("https://img.example/a.png");
   });
 
-  it("links Google to an existing local account when Google verified the email", async () => {
+  it("links Google to an account that predates Google-only sign-in, and saves the Google profile on it", async () => {
     users.set("user-1", {
       id: "user-1",
       email: "patient@example.com",
@@ -245,16 +249,35 @@ describe("account linking", () => {
     });
 
     const result = await signInWithGoogleProfile(profile);
-    expect(result).toMatchObject({ ok: true, outcome: "linked", user: { id: "user-1", name: "Patient Local" } });
-    expect(users.get("user-1")).toMatchObject({ googleId: "google-sub-1", passwordHash: "hash" });
+    expect(result).toMatchObject({ ok: true, outcome: "linked", user: { id: "user-1", name: "Asha Rao", email: "patient@example.com" } });
+    expect(users.get("user-1")).toMatchObject({ googleId: "google-sub-1", name: "Asha Rao", avatarUrl: "https://img.example/a.png", passwordHash: "hash" });
     expect(users.size).toBe(1);
   });
 
-  it("signs in by Google id on later visits", async () => {
+  it("signs in by Google id on later visits and refreshes the saved name, Gmail address and photo", async () => {
     await signInWithGoogleProfile(profile);
-    const again = await signInWithGoogleProfile({ ...profile, email: "renamed@example.com" });
-    expect(again).toMatchObject({ ok: true, outcome: "existing" });
+    const again = await signInWithGoogleProfile({ ...profile, email: "renamed@example.com", name: "Asha R. Rao", picture: "https://img.example/b.png" });
+    expect(again).toMatchObject({ ok: true, outcome: "existing", user: { name: "Asha R. Rao", email: "renamed@example.com" } });
     expect(users.size).toBe(1);
+    expect([...users.values()][0]).toMatchObject({ name: "Asha R. Rao", email: "renamed@example.com", avatarUrl: "https://img.example/b.png" });
+  });
+
+  it("keeps the old address when the new Gmail address already belongs to another account", async () => {
+    await signInWithGoogleProfile(profile);
+    users.set("user-9", { id: "user-9", email: "taken@example.com", name: "Other", role: "patient", googleId: "other-sub", avatarUrl: null, passwordHash: null });
+    const again = await signInWithGoogleProfile({ ...profile, email: "taken@example.com" });
+    expect(again).toMatchObject({ ok: true, outcome: "existing", user: { email: "patient@example.com" } });
+  });
+
+  it("does not follow an unverified email change", async () => {
+    await signInWithGoogleProfile(profile);
+    const again = await signInWithGoogleProfile({ ...profile, email: "new@example.com", emailVerified: false });
+    expect(again).toMatchObject({ ok: true, outcome: "existing", user: { email: "patient@example.com" } });
+  });
+
+  it("has no password: a Google-created account stores no hash", async () => {
+    await signInWithGoogleProfile(profile);
+    expect([...users.values()][0].passwordHash).toBeNull();
   });
 
   it("refuses to link or create from an unverified Google email", async () => {

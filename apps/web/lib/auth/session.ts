@@ -1,13 +1,10 @@
-import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { prisma } from "@/lib/db/prisma";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
   signSession,
   verifySession,
 } from "./jwt";
-import { normalizeEmail } from "./validation";
 
 export type UserRole = "patient" | "clinician" | "admin";
 
@@ -17,78 +14,6 @@ export type SessionUser = {
   name: string;
   role: UserRole;
 };
-
-/** passwordHash is null for accounts created with Google sign-in. */
-export type UserRecord = SessionUser & { passwordHash: string | null };
-
-export type CreateUserInput = {
-  email: string;
-  password: string;
-  name: string;
-  role: UserRole;
-};
-
-const SALT_ROUNDS = 10;
-const USER_ROLES: readonly string[] = ["patient", "clinician", "admin"];
-
-function isUserRole(value: string): value is UserRole {
-  return USER_ROLES.includes(value);
-}
-
-export function toPublicUser(record: UserRecord): SessionUser {
-  return {
-    id: record.id,
-    email: record.email,
-    name: record.name,
-    role: record.role,
-  };
-}
-
-export async function findUserByEmail(email: string): Promise<UserRecord | null> {
-  const user = await prisma.user.findUnique({
-    where: { email: normalizeEmail(email) },
-  });
-
-  if (!user) return null;
-
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: isUserRole(user.role) ? user.role : "patient",
-    passwordHash: user.passwordHash,
-  };
-}
-
-export async function createUser(input: CreateUserInput): Promise<SessionUser> {
-  const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
-
-  const user = await prisma.user.create({
-    data: {
-      email: normalizeEmail(input.email),
-      name: input.name.trim(),
-      role: input.role,
-      passwordHash,
-    },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-    },
-  });
-
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: isUserRole(user.role) ? user.role : "patient",
-  };
-}
-
-export async function verifyPassword(plain: string, hashed: string): Promise<boolean> {
-  return bcrypt.compare(plain, hashed);
-}
 
 export function encryptSession(payload: SessionUser): Promise<string> {
   return signSession(payload);

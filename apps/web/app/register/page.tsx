@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { AuthShell } from "@/components/auth/AuthShell";
-import { RegisterForm } from "@/components/auth/RegisterForm";
 import { authErrorMessage } from "@/lib/auth/messages";
 import { safeNextPath } from "@/lib/auth/redirect";
 
@@ -15,9 +14,5 @@ export default async function RegisterPage({ searchParams }: { searchParams: Sea
   const requested = first(params.next);
   const next = requested ? safeNextPath(requested) : null;
 
-  return (
-    <AuthShell mode="register" next={next}>
-      <RegisterForm initialError={authErrorMessage(first(params.error))} next={next} />
-    </AuthShell>
-  );
+  return <AuthShell error={authErrorMessage(first(params.error))} mode="register" next={next} />;
 }

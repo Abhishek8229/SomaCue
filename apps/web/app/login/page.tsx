@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { AuthShell } from "@/components/auth/AuthShell";
-import { LoginForm } from "@/components/auth/LoginForm";
 import { authErrorMessage } from "@/lib/auth/messages";
 import { safeNextPath } from "@/lib/auth/redirect";
 
@@ -16,9 +15,5 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
   const requested = first(params.next) ?? first(params.from);
   const next = requested ? safeNextPath(requested) : null;
 
-  return (
-    <AuthShell mode="login" next={next}>
-      <LoginForm initialError={authErrorMessage(first(params.error))} next={next} />
-    </AuthShell>
-  );
+  return <AuthShell error={authErrorMessage(first(params.error))} mode="login" next={next} />;
 }

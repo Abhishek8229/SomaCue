@@ -1,7 +1,7 @@
 /**
- * Small in-memory sliding-window rate limiter for the auth routes.
- * State lives in one server process. That is enough to slow password guessing
- * on a single instance; a multi-instance deployment needs a shared store.
+ * Small in-memory sliding-window rate limiter for the API routes (billing checkout, for one).
+ * State lives in one server process. That is enough to slow abuse on a single instance;
+ * a multi-instance deployment needs a shared store.
  */
 
 type Bucket = { hits: number[] };
@@ -54,33 +54,4 @@ export function checkRateLimits(rules: RateLimitRule[], now: number = Date.now()
 
 export function clearRateLimits() {
   buckets.clear();
-}
-
-/** Best-effort client address from the proxy headers. */
-export function clientIp(headers: Headers): string {
-  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || headers.get("x-real-ip")?.trim() || "unknown";
-}
-
-const FIFTEEN_MINUTES = 15 * 60_000;
-
-/** Login: a tight limit per IP + email, and a wider one per IP. */
-export function loginRules(ip: string, email: string): RateLimitRule[] {
-  return [
-    { key: `login:ip-email:${ip}:${email}`, limit: 5, windowMs: FIFTEEN_MINUTES },
-    { key: `login:ip:${ip}`, limit: 30, windowMs: FIFTEEN_MINUTES },
-  ];
-}
-
-/** Register: few accounts per IP and per IP + email. */
-export function registerRules(ip: string, email: string): RateLimitRule[] {
-  return [
-    { key: `register:ip-email:${ip}:${email}`, limit: 3, windowMs: 60 * 60_000 },
-    { key: `register:ip:${ip}`, limit: 10, windowMs: 60 * 60_000 },
-  ];
-}
-
-export function rateLimitMessage(retryAfterSeconds: number): string {
-  const minutes = Math.ceil(retryAfterSeconds / 60);
-  return `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
 }
