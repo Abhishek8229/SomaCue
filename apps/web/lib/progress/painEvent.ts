@@ -60,4 +60,8 @@ export type ReportPainResult =
 
 export type ReschedulePainResult =
   | { success: true; schedule: import("./dailyProgress").ScheduleWithSteps }
-  | { success: false; error: string; aiError?: "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT" };
+  | {
+      success: false;
+      error: string;
+      aiError?: "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT";
+    };

@@ -87,6 +87,10 @@ export async function reportPainEvent(
 export async function reschedulePainEvent(reportId: string, eventId: string): Promise<ReschedulePainResult> {
   const owned = await loadOwnedPlan(reportId);
   if ("error" in owned) return fail(owned.error);
+
+  // Pain Override is safety care: stopping, reporting and rebuilding the plan around the report
+  // are free for every plan, so there is deliberately no plan check here.
+
   if (typeof eventId !== "string" || !eventId) return fail("The stop report could not be found.");
 
   const event = await prisma.painEvent.findFirst({

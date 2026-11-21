@@ -123,12 +123,39 @@
   background: color-mix(in oklab, var(--landing-signal) 10%, transparent);
 }
 
+/* The workspace upgrade call to action, beside Rehab Studio. */
+.upgrade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin-left: var(--space-xs);
+  padding-inline: var(--space-md);
+  border: 1px solid var(--landing-signal);
+  border-radius: var(--radius-input);
+  background: var(--landing-signal);
+  color: var(--landing-signal-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.upgrade:hover {
+  border-color: var(--landing-signal-hover);
+  background: var(--landing-signal-hover);
+}
+
 .button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .link:focus-visible,
+.upgrade:focus-visible,
 .button:focus-visible,
 .brand:focus-visible {
   outline: 2px solid var(--stage-focus);

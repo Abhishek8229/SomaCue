@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getBillingStatus } from "@/lib/billing/entitlements";
+import { isProTier } from "@/lib/billing/plans";
 import { redirect } from "next/navigation";
 import type { TriageQuestion } from "@/actions/generatePlan";
 import { isConditionSource, type DetectedCondition } from "@/lib/clinical/assessment";
@@ -80,7 +82,11 @@ export default async function WorkspacePage({
 
   // ?new=1 opens a blank intake, for "Start a new assessment" on the dashboard.
   // Nothing is created until the intake is submitted.
-  const startFresh = (await searchParams).new === "1";
+  const params = await searchParams;
+  const startFresh = params.new === "1";
+  // /workspace?upgrade=2m (from the pricing page) opens the Upgrade dialog on that tier.
+  const upgradeParam = Array.isArray(params.upgrade) ? params.upgrade[0] : params.upgrade;
+  const initialUpgradeTier = isProTier(upgradeParam) ? upgradeParam : null;
 
   const latestReport = startFresh
     ? null
@@ -151,9 +157,13 @@ export default async function WorkspacePage({
         }
       : null;
   const initialEscalation = latestReport ? toEscalation(latestReport) : null;
+  const initialBilling = await getBillingStatus(user.id);
 
   return (
     <WorkspaceClient
+      initialBilling={initialBilling}
+      initialUpgradeTier={initialUpgradeTier}
+      userEmail={user.email}
       userName={user.name}
       planCreatedAt={routine ? (latestReport?.treatmentPlan?.createdAt.toISOString() ?? null) : null}
       hasActivePlan={routine !== null}

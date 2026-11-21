@@ -50,7 +50,8 @@ export type StoredTreatmentPlan = Omit<TreatmentPlan, "schedule"> & {
 
 export type FeedbackChoice = "relief" | "same" | "issue";
 
-export type ActionFailure = { success: false; error: string };
+/** A failed action. rror is PRO_REQUIRED (with the eature) when only a Pro plan may do it. */
+export type ActionFailure = { success: false; error: string; feature?: import("@/lib/billing/plans").ProFeature };
 export type ToggleExerciseResult =
   | { success: true; completedExercises: string[] }
   | ActionFailure;

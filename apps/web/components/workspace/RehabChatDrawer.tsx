@@ -18,6 +18,8 @@ type Props = {
   /** Active report; each intake has its own conversation. null before the first intake. */
   reportId: string | null;
   quickPrompts: string[];
+  /** Opens the upgrade offer when a Free user is out of Rehab Companion messages. */
+  onUpgrade?: () => void;
 };
 
 let localId = 0;
@@ -77,7 +79,7 @@ function TypingDots() {
   );
 }
 
-export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
+export function RehabChatDrawer({ reportId, quickPrompts, onUpgrade }: Props) {
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -87,6 +89,8 @@ export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
+  /** Free counts 3 messages in total; Pro counts only a daily fair-use ceiling. */
+  const [plan, setPlan] = useState<"free" | "pro" | null>(null);
   const [clearing, setClearing] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -115,6 +119,7 @@ export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
           })),
         );
         setRemaining(typeof data.remaining === "number" ? data.remaining : null);
+        setPlan(data.plan === "free" || data.plan === "pro" ? data.plan : null);
         setLoaded(true);
       })
       .catch((reason: unknown) => {
@@ -166,6 +171,11 @@ export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
   const send = async (raw: string) => {
     const text = raw.replace(/\s+/g, " ").trim();
     if (!text || sending || text.length > MAX_CHARS) return;
+    // Free messages are used up: offer Pro now instead of sending a request that will be refused.
+    if (plan === "free" && remaining === 0) {
+      onUpgrade?.();
+      return;
+    }
     setError(null);
     setInput("");
     setSending(true);
@@ -191,9 +201,20 @@ export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        if (response.status === 429) {
+        if (response.status === 402) {
+          // The server counted this as one message too many. Undo the optimistic bubbles and keep the text.
+          setMessages((current) => current.filter((message) => message.id !== replyId && message.id !== userMessage.id));
+          setInput(text);
+          setPlan("free");
           setRemaining(0);
-          updateReply({ content: data?.error ?? "You've reached today's message limit.", guard: "rate_limit", streaming: false });
+          onUpgrade?.();
+          return;
+        }
+        if (response.status === 429) {
+          // A fair-use pause, not the end of the plan: the server re-checks on the next message,
+          // so the box stays usable and the pause lifts by itself.
+          setRemaining(null);
+          updateReply({ content: data?.error ?? "Please pause for a few minutes before sending more messages.", guard: "rate_limit", streaming: false });
         } else {
           dropReply();
           setError(data?.error ?? "Your message could not be sent. Please try again.");
@@ -262,7 +283,8 @@ export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
   };
 
   const tooLong = input.length > MAX_CHARS;
-  const outOfMessages = remaining === 0;
+  // A Free user with no messages left can still press send: that opens the upgrade offer.
+  const outOfMessages = remaining === 0 && plan !== "free";
   const canSend = !sending && !outOfMessages && input.trim().length > 0 && !tooLong;
 
   return (
@@ -415,7 +437,13 @@ export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
                 id={`${panelId}-input`}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder={outOfMessages ? "Daily limit reached" : "Ask about your plan or exercises…"}
+                placeholder={
+                  outOfMessages
+                    ? "Please pause for a moment"
+                    : plan === "free" && remaining === 0
+                      ? "Upgrade to Pro to keep chatting"
+                      : "Ask about your plan or exercises…"
+                }
                 ref={inputRef}
                 rows={1}
                 value={input}
@@ -431,7 +459,13 @@ export function RehabChatDrawer({ reportId, quickPrompts }: Props) {
             </div>
             <div className="mt-1.5 flex items-center justify-between px-1 text-[10px] text-white/40">
               <span>
-                {remaining !== null ? `${remaining} message${remaining === 1 ? "" : "s"} left today` : "Not medical advice"}
+                {remaining !== null
+                  ? plan === "free"
+                    ? `${remaining} free message${remaining === 1 ? "" : "s"} left`
+                    : remaining <= 5
+                      ? `${remaining} message${remaining === 1 ? "" : "s"} left before a short pause`
+                      : "Not medical advice"
+                  : "Not medical advice"}
               </span>
               <span aria-live="polite" className={tooLong ? "font-semibold text-red-300" : input.length > MAX_CHARS * 0.9 ? "text-amber-200" : ""}>
                 {input.length}/{MAX_CHARS}

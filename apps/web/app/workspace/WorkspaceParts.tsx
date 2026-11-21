@@ -11,6 +11,7 @@ import {
 import { Mic, MicOff } from "lucide-react";
 import Image from "next/image";
 import { submitIntakeForm } from "@/actions/intake";
+import { PRO_REQUIRED } from "@/lib/billing/plans";
 import type { TreatmentPlan, TriageQuestion } from "@/actions/generatePlan";
 import { useDictation } from "@/hooks/useDictation";
 import type { IntakeSnapshot } from "@/lib/analysis/progressCopy";
@@ -63,6 +64,8 @@ type SidebarIntakeProps = {
   /** Rendered under the intake form, e.g. the detected-condition card. */
   summary?: ReactNode;
   onError: (message: string) => void;
+  /** The server refused a new analysis because the free one is used up. */
+  onProRequired?: () => void;
   onRerunAnalysis: () => void;
 };
 
@@ -222,6 +225,7 @@ export function SidebarIntake({
   onPreparing,
   onTriageReady,
   onError,
+  onProRequired,
   onRerunAnalysis,
   summary,
 }: SidebarIntakeProps) {
@@ -370,6 +374,9 @@ export function SidebarIntake({
           condition: result.condition,
           escalation: result.escalation,
         });
+      } else if (result.error === PRO_REQUIRED) {
+        onError("Your free plan includes one analysis. Upgrade to Pro to run another.");
+        onProRequired?.();
       } else {
         onError(
           result.error === "AI_PROVIDER_TIMEOUT"

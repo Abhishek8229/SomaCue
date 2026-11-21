@@ -8,6 +8,7 @@ import {
   type TriageQuestion,
 } from "./generatePlan";
 import { getCurrentUser } from "@/lib/auth/session";
+import { checkAnalysisAllowed } from "@/lib/billing/entitlements";
 import {
   deriveConditionSource,
   screenQuizAnswers,
@@ -49,6 +50,13 @@ export async function submitIntakeForm(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) {
     throw new Error("You must be signed in to submit an intake.");
+  }
+
+  // Free: one Discovery analysis. A new one (re-run) is Pro. Checked here, not just in the UI,
+  // because a server action can be called directly.
+  const blocked = await checkAnalysisAllowed(user.id);
+  if (blocked) {
+    return { success: false, error: blocked.error, feature: blocked.feature } as const;
   }
 
   const primarySymptoms = formData.get("primarySymptoms");

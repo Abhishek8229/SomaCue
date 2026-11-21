@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LEGAL_LINKS } from "@/lib/legal/business";
 import styles from "./landing.module.css";
 
 export function ClosingSection() {
@@ -44,6 +45,13 @@ export function LandingFooter() {
         <nav className={styles.footerLinks} aria-label="Account">
           <Link href="/login">Sign in</Link>
           <Link href="/register">Register</Link>
+        </nav>
+        <nav className={styles.footerLinks} aria-label="Legal">
+          {LEGAL_LINKS.map((link) => (
+            <Link href={link.href} key={link.href}>
+              {link.label}
+            </Link>
+          ))}
         </nav>
       </div>
     </footer>

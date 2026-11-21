@@ -267,7 +267,7 @@
 
 .footerInner {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: var(--space-xl);
   padding-block: var(--space-xl);
 }

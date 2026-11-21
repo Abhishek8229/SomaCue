@@ -12,6 +12,10 @@ import {
   toggleExerciseCompletion,
 } from "@/actions/dailyProgress";
 import { reportPainEvent, reschedulePainEvent } from "@/actions/painEvent";
+import { ExpiryBanner } from "@/components/billing/ExpiryBanner";
+import { ManageSubscription } from "@/components/billing/ManageSubscription";
+import { UpgradeModal } from "@/components/billing/UpgradeModal";
+import { useBilling } from "@/components/billing/useBilling";
 import { StageV2 } from "@/components/stage/StageV2";
 import { StopReportForm, type StopReportSubmission } from "@/components/stage/StopReportForm";
 import { useRepCelebration } from "@/components/stage/useRepCelebration";
@@ -25,6 +29,18 @@ import { DailyPrescriptionPanel } from "@/components/workspace/DailyPrescription
 import { FeedbackModal } from "@/components/workspace/FeedbackModal";
 import { SetRepCounter } from "@/components/workspace/SetRepCounter";
 import { primeCelebrationAudio } from "@/lib/audio/celebrationSound";
+import { publishUpgradeNav } from "@/lib/billing/navBridge";
+import {
+  expiryNotice,
+  isScheduleDayAllowed,
+  PLAN_LIMITS,
+  planDayNumber,
+  planLengthDays,
+  PRO_REQUIRED,
+  recommendedTier,
+  type BillingStatus,
+  type ProTier,
+} from "@/lib/billing/plans";
 import {
   buildSynthesisCopy,
   buildTriageCopy,
@@ -189,11 +205,19 @@ export default function WorkspacePage({
   initialProgress = [],
   initialQuiz,
   planCreatedAt = null,
+  initialBilling,
   reportId,
   routine,
+  userEmail,
   userName,
+  initialUpgradeTier = null,
 }: {
   userName?: string;
+  userEmail?: string;
+  /** The plan and usage the server resolved for this user. */
+  initialBilling: BillingStatus;
+  /** Open the Upgrade dialog on this tier at load (a link from the pricing page). */
+  initialUpgradeTier?: ProTier | null;
   /** ISO time the saved plan was created, which is when Day 1 began. */
   planCreatedAt?: string | null;
   hasActivePlan: boolean;
@@ -206,6 +230,7 @@ export default function WorkspacePage({
   routine: TreatmentPlanPayload | null;
 }) {
   const todayKey = useLocalToday();
+  const billingUser = useMemo(() => ({ name: userName, email: userEmail }), [userName, userEmail]);
   const [selectedDayOffset, setSelectedDayOffset] = useState(0);
   const currentMonth = new Date();
   const [calendarMonth, setCalendarMonth] = useState(
@@ -228,6 +253,14 @@ export default function WorkspacePage({
   const [pendingArrival, setPendingArrival] = useState<(() => void) | null>(null);
   const [planUnlocked, setPlanUnlocked] = useState(hasActivePlan);
   const [storedPlan, setTreatmentPlan] = useState(routine);
+  // The Pro tier that covers the plan the analysis produced; preselected in the Upgrade dialog.
+  const billing = useBilling(
+    initialBilling,
+    billingUser,
+    storedPlan ? recommendedTier(storedPlan.durationMonths) : null,
+    initialUpgradeTier,
+  );
+  const currentPlan = billing.billing.plan;
   const [triageQuiz, setTriageQuiz] = useState(initialQuiz);
   const [activeReportId, setActiveReportId] = useState(reportId);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
@@ -350,9 +383,22 @@ export default function WorkspacePage({
     : null;
   const canRecordProgress = selectedDateKey !== null && selectedDateKey === todayKey;
   const selectedProgress = selectedDateKey ? progressByDate[selectedDateKey] : undefined;
+  // Day 1 is the day of the analysis. Free covers Days 1 to 7, Pro the whole plan for as long as
+  // the purchased days last: a day past that is shown locked, with no exercises, and the server
+  // refuses to record it.
+  const planStartKey = treatmentPlan?.startDateKey ?? fallbackStartKey;
+  const selectedDayNumber = selectedDateKey ? planDayNumber(planStartKey, selectedDateKey) : null;
+  const planDays = planLengthDays(treatmentPlan?.durationMonths);
+  const selectedDayLocked = selectedDayNumber !== null && !isScheduleDayAllowed(currentPlan, selectedDayNumber, planDays);
+  const notice = expiryNotice({
+    plan: currentPlan,
+    currentPeriodEnd: billing.billing.currentPeriodEnd,
+    dayNumber,
+    hasActivePlan: planUnlocked && treatmentPlan !== null,
+  });
   const selectedExercises = useMemo(
-    () => (treatmentPlan ? getDayExercises(treatmentPlan, selectedScheduleDay) : []),
-    [treatmentPlan, selectedScheduleDay],
+    () => (treatmentPlan && !selectedDayLocked ? getDayExercises(treatmentPlan, selectedScheduleDay) : []),
+    [treatmentPlan, selectedScheduleDay, selectedDayLocked],
   );
   const stageExercises = useMemo(() => selectedExercises.map(resolveStageExercise), [selectedExercises]);
   const todayProgress = progressByDate[todayKey];
@@ -447,12 +493,27 @@ export default function WorkspacePage({
     });
   };
 
+  // Tell the site-wide navbar to show "Upgrade to Pro" while the user is on Free.
+  const openUpgradeFromNav = billing.openUpgrade;
+  useEffect(() => {
+    publishUpgradeNav({ visible: !billing.isPro, open: () => openUpgradeFromNav("general") });
+    return () => publishUpgradeNav(null);
+  }, [billing.isPro, openUpgradeFromNav]);
+
   const handleAnalysisComplete = () => {
     pendingArrival?.();
     setPendingArrival(null);
+    // A finished analysis uses up the free one: keep the usage the UI checks in step.
+    void billing.refresh();
   };
 
   const handleRerunAnalysis = () => {
+    // Free includes one Discovery analysis. The server enforces this too; asking here
+    // just saves a Free user from filling in a form that would be refused.
+    if (currentPlan === "free" && billing.billing.usage.analysesUsed >= PLAN_LIMITS.free.analyses) {
+      billing.openUpgrade("reanalysis");
+      return;
+    }
     setEscalation(null);
     setCondition(null);
     setReportsSubmitted(false);
@@ -506,7 +567,8 @@ export default function WorkspacePage({
         updateProgress(dateKey, { completedExercises: result.completedExercises });
       } else {
         updateProgress(dateKey, { completedExercises: previous });
-        setProgressError(result.error);
+        if (result.error === PRO_REQUIRED) billing.openUpgrade(result.feature ?? "schedule");
+        else setProgressError(result.error);
       }
     } catch {
       updateProgress(dateKey, { completedExercises: previous });
@@ -543,6 +605,8 @@ export default function WorkspacePage({
           const restoredSchedule = result.schedule ?? undefined;
           setTreatmentPlan((plan) => (plan ? { ...plan, schedule: restoredSchedule } : plan));
         }
+      } else if (result.error === PRO_REQUIRED) {
+        billing.openUpgrade(result.feature ?? "schedule");
       } else {
         setProgressError(result.error);
       }
@@ -663,6 +727,11 @@ export default function WorkspacePage({
     try {
       const result = await submitDailyFeedback(activeReportId, dateKey, submission);
       if (!result.success) {
+        if (result.error === PRO_REQUIRED) {
+          setIsFeedbackOpen(false);
+          billing.openUpgrade(result.feature ?? "schedule");
+          return;
+        }
         setFeedbackError(result.error);
         return;
       }
@@ -818,6 +887,23 @@ export default function WorkspacePage({
               {formatPlanDuration(treatmentPlan.durationMonths)}
             </span>
           ) : null}
+          {billing.isPro ? (
+            <button
+              className={`${interactive} rounded-lg border border-emerald-300/50 bg-emerald-300/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-300/20`}
+              onClick={billing.openManage}
+              title="You are on SomaCue Pro"
+              type="button"
+            >
+              Pro
+            </button>
+          ) : null}
+          <button
+            className={`${interactive} text-[11px] text-white/65 hover:text-white`}
+            onClick={billing.openManage}
+            type="button"
+          >
+            Billing
+          </button>
           <Link className={`${interactive} text-[11px] text-white/65 hover:text-white`} href="/dashboard#history">
             Patient History
           </Link>
@@ -827,6 +913,14 @@ export default function WorkspacePage({
           </span>
         </div>
       </header>
+
+      {notice ? (
+        <ExpiryBanner
+          notice={notice}
+          onRenew={() => billing.openUpgrade("renew")}
+          onUpgrade={() => billing.openUpgrade("general")}
+        />
+      ) : null}
 
       {skipNotice ? (
         <div
@@ -847,6 +941,22 @@ export default function WorkspacePage({
         </div>
       ) : null}
 
+      {billing.notice && !billing.manageOpen ? (
+        <div
+          className="flex shrink-0 items-center justify-between gap-4 border-b border-emerald-300/30 bg-emerald-300/10 px-5 py-2"
+          role="status"
+        >
+          <p className="text-xs text-emerald-100">{billing.notice}</p>
+          <button
+            className={`${interactive} shrink-0 rounded-lg border border-emerald-300/40 px-3 py-1 text-[11px] text-emerald-100 hover:bg-emerald-300/15`}
+            onClick={billing.dismissNotice}
+            type="button"
+          >
+            Got it
+          </button>
+        </div>
+      ) : null}
+
       <div className="workspace-grid flex-1 grid grid-cols-12 gap-4 overflow-hidden p-4">
         <div className="workspace-rail col-span-3 flex flex-col gap-4 overflow-y-auto">
           <SidebarIntake
@@ -857,13 +967,19 @@ export default function WorkspacePage({
               setFlowPhase("discovery");
             }}
             onPreparing={handlePreparing}
+            onProRequired={() => billing.openUpgrade("reanalysis")}
             onRerunAnalysis={handleRerunAnalysis}
             onTriageReady={handleTriageReady}
             reportsSubmitted={reportsSubmitted}
             summary={condition ? <ConditionCard condition={condition} escalation={escalation} /> : null}
           />
           {!isFlowLocked ? (
-            <RehabChatDrawer key={activeReportId ?? "no-report"} quickPrompts={chatPrompts} reportId={activeReportId} />
+            <RehabChatDrawer
+              key={activeReportId ?? "no-report"}
+              onUpgrade={() => billing.openUpgrade("companion")}
+              quickPrompts={chatPrompts}
+              reportId={activeReportId}
+            />
           ) : null}
         </div>
 
@@ -944,13 +1060,20 @@ export default function WorkspacePage({
                       date.toDateString() === new Date().toDateString();
                     const isBeforeScheduleStart = date < scheduleStartDate;
                     const isBeyondScheduleHorizon = date > scheduleEndDate;
+                    // Free covers Days 1 to 7: later days show a lock and open the upgrade offer.
+                    const isPlanLocked =
+                      currentPlan === "free" &&
+                      !isBeforeScheduleStart &&
+                      !isScheduleDayAllowed(currentPlan, planDayNumber(planStartKey, toDateKey(date)));
 
                     return (
                       <button
-                        aria-label={`${calendarMonthLabel} ${day}${isDayStopped ? ", session stopped" : isDayDone ? ", session completed" : ""}`}
+                        aria-label={`${calendarMonthLabel} ${day}${isPlanLocked ? ", locked, needs Pro" : ""}${isDayStopped ? ", session stopped" : isDayDone ? ", session completed" : ""}`}
                         className={`${interactive} relative mx-auto grid h-7 w-7 place-items-center rounded-md text-[11px] ${
                           isBeforeScheduleStart
                             ? "cursor-not-allowed text-white/20 blur-[1px]"
+                            : isPlanLocked
+                              ? "text-white/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                             : isSelected
                             ? "workspace-calendar-selected font-semibold"
                             : isBeyondScheduleHorizon
@@ -963,6 +1086,10 @@ export default function WorkspacePage({
                         key={dateKey}
                         onClick={() => {
                           if (isBeforeScheduleStart) {
+                            return;
+                          }
+                          if (isPlanLocked) {
+                            billing.openUpgrade("schedule");
                             return;
                           }
 
@@ -985,6 +1112,11 @@ export default function WorkspacePage({
                         type="button"
                       >
                         {day}
+                        {isPlanLocked ? (
+                          <svg aria-hidden="true" className="absolute -right-0.5 -top-0.5 text-emerald-300/80" fill="none" height="8" viewBox="0 0 24 24" width="8">
+                            <path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+                          </svg>
+                        ) : null}
                         {isDayStopped ? (
                           <span aria-hidden="true" className="workspace-calendar-stopped" />
                         ) : isDayDone ? (
@@ -1023,6 +1155,32 @@ export default function WorkspacePage({
                   This date has not been analyzed yet. We’ll update the plan after your feedback and the next AI analysis.
                 </p>
               </section>
+            ) : selectedDayLocked ? (
+              <section
+                className="workspace-panel flex min-h-56 flex-col items-center justify-center rounded-2xl border border-emerald-300/25 bg-zinc-900 p-6 text-center"
+                data-testid="locked-day"
+              >
+                <div className="grid h-12 w-12 place-items-center rounded-full border border-emerald-300/35 bg-emerald-300/10 text-emerald-200">
+                  <svg aria-hidden="true" fill="none" height="22" viewBox="0 0 24 24" width="22">
+                    <path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+                  </svg>
+                </div>
+                <h2 className="mt-4 text-base font-medium tracking-tight">
+                  {currentPlan === "free" ? `Day ${selectedDayNumber} is part of Pro` : "Your plan has finished"}
+                </h2>
+                <p className="mt-2 max-w-xs text-[11px] leading-relaxed text-white/60">
+                  {currentPlan === "free"
+                    ? `Free covers Week 1 (Days 1–${PLAN_LIMITS.free.scheduleDays}). Pro opens your full adaptive schedule, Day 1 to the end of your plan.`
+                    : "Run a new analysis to start your next plan."}
+                </p>
+                <button
+                  className={`${interactive} mt-4 min-h-10 rounded-lg bg-emerald-300 px-4 text-xs font-semibold text-zinc-950! hover:bg-emerald-200`}
+                  onClick={currentPlan === "free" ? () => billing.openUpgrade("schedule") : handleRerunAnalysis}
+                  type="button"
+                >
+                  {currentPlan === "free" ? "Unlock with Pro" : "Run a new analysis"}
+                </button>
+              </section>
             ) : (
             <DailyPrescriptionPanel
               canInteract={canRecordProgress}
@@ -1038,8 +1196,8 @@ export default function WorkspacePage({
                 canRecordProgress && sessionStopped && !stoppedToday && painFlow && !painFlow.open
                   ? () => setPainFlow((flow) => (flow ? { ...flow, open: true, error: null } : flow))
                   : painFlow?.reschedule === "failed" && painFlow.eventId
-                    ? () => void runPainReschedule(painFlow.eventId as string)
-                    : null
+                      ? () => void runPainReschedule(painFlow.eventId as string)
+                      : null
               }
               onReset={handleResetDay}
               stopActionLabel={
@@ -1117,6 +1275,37 @@ export default function WorkspacePage({
           isSubmitting={painFlow.submitting}
           onClose={() => setPainFlow((flow) => (flow ? { ...flow, open: false } : flow))}
           onSubmit={handleSubmitStopReport}
+        />
+      ) : null}
+
+      {billing.upgradeFeature ? (
+        <UpgradeModal
+          accessEndsAt={billing.billing.currentPeriodEnd}
+          error={billing.error}
+          feature={billing.upgradeFeature}
+          onClose={billing.closeUpgrade}
+          onSelectTier={billing.selectTier}
+          recommended={billing.recommended}
+          tier={billing.tier}
+          onUpgrade={() => void billing.startCheckout()}
+          phase={billing.phase}
+        />
+      ) : null}
+
+      {billing.manageOpen ? (
+        <ManageSubscription
+          billing={billing.billing}
+          error={billing.error}
+          notice={billing.notice}
+          onClose={billing.closeManage}
+          onRenew={() => {
+            billing.closeManage();
+            billing.openUpgrade("renew");
+          }}
+          onUpgrade={() => {
+            billing.closeManage();
+            billing.openUpgrade("general");
+          }}
         />
       ) : null}
 

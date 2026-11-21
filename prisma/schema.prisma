@@ -23,6 +23,8 @@ model User {
   patientAssessments   ClinicalAssessment[] @relation("PatientAssessments")
   clinicianAssessments ClinicalAssessment[] @relation("ClinicianAssessments")
   chatMessages         ChatMessage[]
+  subscription         Subscription?
+  proPurchases         ProPurchase[]
 }
 
 model ClinicalAssessment {
@@ -204,4 +206,64 @@ model PrescribedMovement {
 
   @@index([assessmentId])
   @@index([exerciseId])
+}
+
+/// One billing record per user. Pro access is derived from it in lib/billing/entitlements.ts.
+/// Table and column names are snake_case on purpose: they are the billing contract.
+model Subscription {
+  id                     String    @id @default(cuid())
+  userId                 String    @unique @map("user_id")
+  /// Always "razorpay" today.
+  provider               String    @default("razorpay")
+  providerCustomerId     String?   @map("provider_customer_id")
+  providerSubscriptionId String?   @unique @map("provider_subscription_id")
+  /// "free" or "pro"
+  plan                   String    @default("free")
+  /// "created", "authenticated", "active", "pending", "halted" or "cancelled"
+  status                 String    @default("created")
+  currentPeriodEnd       DateTime? @map("current_period_end") @db.Timestamptz(3)
+  cancelAtPeriodEnd      Boolean   @default(false) @map("cancel_at_period_end")
+  /// The tier of the latest paid purchase: "1m", "2m" or "3m". Null for rows from before tiers.
+  tier                   String?
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+/// One Pro checkout: a fixed 30, 60 or 90 days of access for one payment. It is created
+/// "created" when checkout opens and flips to "paid" exactly once, which is what
+/// makes the verify route and the webhook safe to run for the same payment.
+model ProPurchase {
+  id                     String    @id @default(cuid())
+  userId                 String    @map("user_id")
+  providerSubscriptionId String    @unique @map("provider_subscription_id")
+  /// "1m", "2m" or "3m"
+  tier                   String
+  days                   Int
+  amountMinor            Int       @map("amount_minor")
+  /// "created" until the payment is confirmed, then "paid"
+  status                 String    @default("created")
+  providerPaymentId      String?   @map("provider_payment_id")
+  paidAt                 DateTime? @map("paid_at") @db.Timestamptz(3)
+  /// The access window this payment added, set when it is paid.
+  accessStart            DateTime? @map("access_start") @db.Timestamptz(3)
+  accessEnd              DateTime? @map("access_end") @db.Timestamptz(3)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("pro_purchases")
+}
+
+/// Razorpay webhook events already handled, so a retried delivery is applied once.
+model BillingEvent {
+  eventId     String   @id @map("event_id")
+  eventType   String   @map("event_type")
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(3)
+
+  @@map("billing_events")
 }

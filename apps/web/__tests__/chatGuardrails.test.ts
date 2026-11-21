@@ -109,7 +109,6 @@ describe("message limits", () => {
     expect(CHAT_LIMITS.historyMessages).toBeGreaterThanOrEqual(8);
     expect(CHAT_LIMITS.historyMessages).toBeLessThanOrEqual(10);
     expect(CHAT_LIMITS.maxOutputTokens).toBe(350);
-    expect(CHAT_LIMITS.dailyMessages).toBeGreaterThan(0);
   });
 });
 

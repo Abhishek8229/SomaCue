@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const plan = vi.hoisted(() => ({
+  subscription: { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null } as {
+    status: string;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: Date | null;
+  } | null,
+  /** analyses the user has already completed */
+  analyses: 0,
+}));
+
 const { create, update, quizCreate, generateTriageQuiz } = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
@@ -9,7 +19,11 @@ const { create, update, quizCreate, generateTriageQuiz } = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/session", () => ({ getCurrentUser: async () => ({ id: "patient-1" }) }));
 vi.mock("@/lib/db/prisma", () => ({
-  prisma: { clinicalReport: { create, update }, triageQuiz: { create: quizCreate } },
+  prisma: {
+    clinicalReport: { create, update, count: async () => plan.analyses },
+    triageQuiz: { create: quizCreate },
+    subscription: { findUnique: async () => plan.subscription },
+  },
 }));
 vi.mock("@/actions/generatePlan", () => ({ generateTriageQuiz, generateFinalRoutine: vi.fn() }));
 vi.mock("@/lib/kinematics/plan-repair", () => ({ repairPlan: vi.fn() }));
@@ -39,6 +53,8 @@ function form(entries: [string, string][], symptoms = "Right knee pain after lon
 describe("submitIntakeForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    plan.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
+    plan.analyses = 0;
     create.mockResolvedValue({ id: "report-1" });
     quizCreate.mockResolvedValue({ id: "quiz-1" });
     update.mockResolvedValue({});
@@ -146,5 +162,49 @@ describe("submitIntakeForm", () => {
     await expect(
       submitIntakeForm(form([["aiDisclaimerAccepted", "true"]])),
     ).resolves.toEqual({ success: false, error: "AI_PROVIDER_FAILED" });
+  });
+});
+
+describe("submitIntakeForm: Discovery analyses by plan", () => {
+  const submit = () => submitIntakeForm(form([["scanUrl", SCAN], ["prescriptionUrl", RX]]));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    create.mockResolvedValue({ id: "report-1" });
+    quizCreate.mockResolvedValue({ id: "quiz-1" });
+    update.mockResolvedValue({});
+    generateTriageQuiz.mockResolvedValue({ success: true, questions: QUESTIONS, assessment: safeAssessment });
+    plan.subscription = null; // Free
+    plan.analyses = 0;
+  });
+
+  it("lets a Free user run their first analysis", async () => {
+    plan.analyses = 0;
+    const result = await submit();
+    expect(result).toMatchObject({ success: true, reportId: "report-1" });
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a Free user's second analysis with PRO_REQUIRED, before anything is saved or sent to the AI", async () => {
+    plan.analyses = 1;
+    const result = await submit();
+    expect(result).toEqual({ success: false, error: "PRO_REQUIRED", feature: "reanalysis" });
+    expect(create).not.toHaveBeenCalled();
+    expect(generateTriageQuiz).not.toHaveBeenCalled();
+  });
+
+  it("lets Pro re-run the analysis as often as they like", async () => {
+    plan.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
+    plan.analyses = 12;
+    expect(await submit()).toMatchObject({ success: true });
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes back to one analysis once a cancelled subscription's paid period is over", async () => {
+    plan.analyses = 2;
+    plan.subscription = { status: "cancelled", cancelAtPeriodEnd: true, currentPeriodEnd: new Date(Date.now() - 60_000) };
+    expect(await submit()).toMatchObject({ success: false, error: "PRO_REQUIRED" });
+    plan.subscription = { status: "cancelled", cancelAtPeriodEnd: true, currentPeriodEnd: new Date(Date.now() + 86_400_000) };
+    expect(await submit()).toMatchObject({ success: true });
   });
 });

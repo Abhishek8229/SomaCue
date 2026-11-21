@@ -26,6 +26,7 @@ import { reconcileSchedule } from "@/lib/progress/schedule";
 import {
   STOPPED_MESSAGE,
   fail,
+  checkPlanDay,
   loadOwnedPlan,
   validateDateKey,
 } from "@/lib/progress/server-plan";
@@ -45,6 +46,9 @@ export async function toggleExerciseCompletion(
   if (dateError) {
     return fail(dateError);
   }
+
+  const blocked = await checkPlanDay(owned, dateKey);
+  if (blocked) return blocked;
 
   if (typeof checked !== "boolean" || !collectExerciseNames(owned.plan).has(exerciseName)) {
     return fail("That exercise is not part of your plan.");
@@ -92,6 +96,9 @@ export async function resetDailyProgress(
     return fail(dateError);
   }
 
+  const blocked = await checkPlanDay(owned, dateKey);
+  if (blocked) return blocked;
+
   // Deleting the row clears the completed flag, feedback, discomfort details
   // and checked exercises together. A day with no row is already reset.
   const where = { clinicalReportId: reportId, patientId: owned.userId, dateKey };
@@ -131,6 +138,9 @@ export async function submitDailyFeedback(
   if (dateError) {
     return fail(dateError);
   }
+
+  const blocked = await checkPlanDay(owned, dateKey);
+  if (blocked) return blocked;
 
   const parsed = feedbackSubmissionSchema.safeParse(submission);
   if (!parsed.success) {

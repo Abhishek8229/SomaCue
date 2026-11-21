@@ -8,6 +8,11 @@ const db = vi.hoisted(() => ({
   progress: new Map<string, Record<string, unknown>>(),
   routineWrites: [] as unknown[],
   reschedule: vi.fn(),
+  subscription: { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null } as {
+    status: string;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: Date | null;
+  } | null,
 }));
 
 const plan = {
@@ -76,6 +81,10 @@ vi.mock("@/lib/db/prisma", () => {
       },
       updateMany: async () => ({ count: 1 }),
     },
+    // The billing checks read the plan. An active subscription keeps these tests about pain events.
+    subscription: {
+      findUnique: async () => db.subscription,
+    },
     treatmentPlan: {
       update: async ({ data }: { data: { routine: unknown } }) => {
         db.routineWrites.push(data.routine);
@@ -88,7 +97,7 @@ vi.mock("@/lib/db/prisma", () => {
 });
 
 import { reportPainEvent, reschedulePainEvent } from "@/actions/painEvent";
-import { toggleExerciseCompletion } from "@/actions/dailyProgress";
+import { resetDailyProgress, submitDailyFeedback, toggleExerciseCompletion } from "@/actions/dailyProgress";
 import { toDateKey } from "@/lib/progress/dailyProgress";
 
 const today = toDateKey(new Date());
@@ -106,12 +115,13 @@ beforeEach(() => {
     id: "report-1",
     patientId: "patient-1",
     primarySymptoms: "Low back pain",
-    treatmentPlan: { id: "plan-1", routine: structuredClone(plan) },
+    treatmentPlan: { id: "plan-1", routine: structuredClone(plan), createdAt: new Date() },
   };
   db.painEvents.length = 0;
   db.progress.clear();
   db.routineWrites.length = 0;
   db.reschedule.mockReset();
+  db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
 });
 
 describe("reportPainEvent", () => {
@@ -220,5 +230,122 @@ describe("progress escalation", () => {
     // Locked: no more progress actions until a new intake.
     const toggle = await toggleExerciseCompletion("report-1", today, "Ankle Pumps", true);
     expect(toggle).toMatchObject({ success: false, error: expect.stringMatching(/in-person/) });
+  });
+});
+
+/** The plan's Day 1, so that today is plan Day `day`. */
+const startForDay = (day: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() - (day - 1));
+  return toDateKey(date);
+};
+
+describe("Pain Override is free on every plan", () => {
+  beforeEach(() => {
+    db.subscription = null;
+  });
+
+  it("always lets a Free user stop and report: that is safety, not a feature", async () => {
+    const result = await reportPainEvent("report-1", today, report);
+    expect(result).toMatchObject({ success: true, eventId: "event-1" });
+    expect(db.painEvents).toHaveLength(1);
+    expect(db.progress.get(`report-1:${today}`)?.stoppedAt).toBeInstanceOf(Date);
+  });
+
+  const rebuilt = {
+    success: true,
+    schedule: { horizonDays: 1, days: [{ dayOffset: 0, status: "active", focus: "Today", tagline: "Go", steps: [] }] },
+  };
+
+  it("rebuilds the plan around the report for a Free user, with no plan check", async () => {
+    db.reschedule.mockResolvedValue(rebuilt);
+    await reportPainEvent("report-1", today, report);
+    const result = await reschedulePainEvent("report-1", "event-1");
+    expect(result.success).toBe(true);
+    expect(db.reschedule).toHaveBeenCalledTimes(1);
+    expect(db.routineWrites).toHaveLength(1);
+  });
+
+  it("rebuilds the plan for a Pro user the same way", async () => {
+    db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
+    db.reschedule.mockResolvedValue(rebuilt);
+    await reportPainEvent("report-1", today, report);
+    expect((await reschedulePainEvent("report-1", "event-1")).success).toBe(true);
+    expect(db.reschedule).toHaveBeenCalledTimes(1);
+  });
+
+  it("never answers PRO_REQUIRED for Pain Override, even for a Free user whose Week 1 has ended", async () => {
+    db.reschedule.mockResolvedValue(rebuilt);
+    await reportPainEvent("report-1", today, report);
+    const result = await reschedulePainEvent("report-1", "event-1");
+    expect(JSON.stringify(result)).not.toContain("PRO_REQUIRED");
+  });
+});
+
+describe("Plan days: Free covers Week 1 (Days 1 to 7), Pro the whole plan", () => {
+  const withStart = (day: number) => {
+    (db.report as { treatmentPlan: { routine: { startDateKey?: string } } }).treatmentPlan.routine.startDateKey = startForDay(day);
+  };
+  const withMonths = (months: number) => {
+    (db.report as { treatmentPlan: { routine: { durationMonths: number } } }).treatmentPlan.routine.durationMonths = months;
+  };
+  const tick = () => toggleExerciseCompletion("report-1", today, "Ankle Pumps", true);
+
+  it("lets a Free user record exercises up to Day 7", async () => {
+    db.subscription = null;
+    withStart(7);
+    expect((await tick()).success).toBe(true);
+  });
+
+  it("asks a Free user to upgrade from Day 8, and saves nothing", async () => {
+    db.subscription = null;
+    withStart(8);
+    expect(await tick()).toEqual({ success: false, error: "PRO_REQUIRED", feature: "schedule" });
+    expect(db.progress.size).toBe(0);
+  });
+
+  it("applies the same limit to resetting a day and to feedback", async () => {
+    db.subscription = null;
+    withStart(9);
+    expect(await resetDailyProgress("report-1", today)).toMatchObject({ success: false, error: "PRO_REQUIRED" });
+    expect(await submitDailyFeedback("report-1", today, { feedback: "same" })).toMatchObject({ success: false, error: "PRO_REQUIRED" });
+  });
+
+  it("lets Pro continue past Day 7, up to the last day of a 1, 2 or 3 month plan", async () => {
+    db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
+    for (const [months, lastDay] of [[1, 30], [2, 60], [3, 90]] as const) {
+      withMonths(months);
+      withStart(8);
+      expect((await tick()).success, `${months}m Day 8`).toBe(true);
+      withStart(lastDay);
+      expect((await tick()).success, `${months}m Day ${lastDay}`).toBe(true);
+    }
+  });
+
+  it("tells a Pro user past the last day of their plan it has finished, not to upgrade", async () => {
+    db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
+    withMonths(1);
+    withStart(31);
+    const result = await tick();
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).not.toBe("PRO_REQUIRED");
+      expect(result.error).toMatch(/plan has finished/);
+    }
+  });
+
+  it("sends a Pro user whose purchased days have ended back to asking for Pro past Day 7", async () => {
+    db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: new Date(Date.now() - 60_000) };
+    withMonths(3);
+    withStart(20);
+    expect(await tick()).toEqual({ success: false, error: "PRO_REQUIRED", feature: "schedule" });
+  });
+
+  it("counts a plan saved before schedules were dated from the day it was created", async () => {
+    db.subscription = null;
+    const created = new Date();
+    created.setDate(created.getDate() - 9);
+    (db.report as { treatmentPlan: { createdAt: Date } }).treatmentPlan.createdAt = created;
+    expect(await tick()).toMatchObject({ success: false, error: "PRO_REQUIRED" });
   });
 });

@@ -2,6 +2,7 @@
  * Rehab Companion guardrails. Everything here is deterministic and runs before
  * any AI call, so off-topic, adversarial and red-flag messages cost no tokens.
  */
+import { COMPANION_LIMITS } from "@/lib/billing/plans";
 import {
   CONDITION_SOURCE_LABELS,
   screenRedFlags,
@@ -16,14 +17,28 @@ export const CHAT_LIMITS = {
   historyMessages: 10,
   /** Ceiling on each AI answer. */
   maxOutputTokens: 350,
-  /** User messages per patient per UTC day, including blocked ones. */
-  dailyMessages: 40,
 } as const;
 
 export const OUT_OF_SCOPE_REPLY =
   "I can only help with your SomaCue rehab plan, scheduled exercises, condition summary, and platform features.";
 
-export const RATE_LIMIT_REPLY = `You've reached today's limit of ${CHAT_LIMITS.dailyMessages} messages. The Rehab Companion will be available again tomorrow. If something feels wrong during an exercise, stop and use Pain Override.`;
+const SAFETY_REMINDER = "If something feels wrong during an exercise, stop and use Pain Override. It always works.";
+
+function waitPhrase(seconds: number) {
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `${hours} hour${hours === 1 ? "" : "s"}${rest ? ` ${rest} minute${rest === 1 ? "" : "s"}` : ""}`;
+}
+
+/** The friendly 429 text for a Pro user who has hit a fair-use limit. */
+export function companionLimitReply(limit: { reason: "burst" | "window"; retryAt: Date; retryAfterSeconds: number }) {
+  const at = `${limit.retryAt.toISOString().slice(11, 16)} UTC`;
+  return limit.reason === "burst"
+    ? `You've sent ${COMPANION_LIMITS.proBurstMessages} messages in a row. Take a short break: the Rehab Companion is ready again in about ${waitPhrase(limit.retryAfterSeconds)} (${at}). ${SAFETY_REMINDER}`
+    : `You've used ${COMPANION_LIMITS.proWindowMessages} messages in the last 24 hours. Your next message opens up in about ${waitPhrase(limit.retryAfterSeconds)} (${at}). ${SAFETY_REMINDER}`;
+}
 
 export function redFlagReply(flags: string[]) {
   const list = flags.join("; ").toLowerCase();

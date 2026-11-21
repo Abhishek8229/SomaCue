@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import type { SessionUser } from "@/lib/auth/session";
+import { useUpgradeNav } from "@/lib/billing/navBridge";
 import styles from "./Navbar.module.css";
+
+const LEGAL_PATHS = ["/pricing", "/terms", "/privacy", "/refunds", "/contact"];
 
 type NavbarProps = {
   user: SessionUser | null;
@@ -51,9 +54,12 @@ function SignOutButton() {
 export function Navbar({ user }: NavbarProps) {
   const pathname = usePathname();
   const badgeLabel = user?.role === "clinician" ? "Dr." : "Pt.";
+  // The workspace publishes this once it knows the user is on the Free plan.
+  const upgradeNav = useUpgradeNav();
+  const showUpgrade = pathname.startsWith("/workspace") && upgradeNav.visible && upgradeNav.open !== null;
 
-  // The landing and auth pages draw their own navigation.
-  if (pathname === "/" || pathname === "/login" || pathname === "/register") return null;
+  // The landing, auth and public policy pages draw their own navigation.
+  if (pathname === "/" || pathname === "/login" || pathname === "/register" || LEGAL_PATHS.includes(pathname)) return null;
 
   return (
     <header className={styles.bar}>
@@ -79,6 +85,11 @@ export function Navbar({ user }: NavbarProps) {
               >
                 Rehab Studio
               </Link>
+              {showUpgrade ? (
+                <button className={styles.upgrade} onClick={() => upgradeNav.open?.()} type="button">
+                  Upgrade to Pro
+                </button>
+              ) : null}
             </div>
             <span className={styles.badge}>
               {badgeLabel} {user.name}

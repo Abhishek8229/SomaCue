@@ -1,4 +1,9 @@
-"use server";
+/*
+ * AI generation for intake, the routine and rescheduling. Deliberately NOT a "use server"
+ * module: those exports would be public endpoints anyone could call, with no sign-in
+ * and no plan check. They are plain server-side functions, called only from the server
+ * actions in intake.ts, dailyProgress.ts and painEvent.ts, which check both first.
+ */
 
 import { BlobServiceClient } from "@azure/storage-blob";
 import { generateObject } from "ai";
@@ -386,7 +391,7 @@ export async function generateFinalRoutine(
 (X-rays, MRIs, prescriptions), and answers to a tailored triage quiz. Analyze the visual data strictly
 for physical rehabilitation constraints and incorporate the quiz findings into a safe rehabilitation plan.
 Avoid diagnosis, unsafe intensity, aggressive ranges of motion, and exercises that require equipment.
-Choose the exact plan duration in whole months (1 to 12) based on case complexity. Return exactly one
+Choose the exact plan duration in whole months (at least 1, never shorter than one month of 30 days, and at most 12) based on case complexity. Return exactly one
 phase object per plan month in chronological order, with a concise phase name and a patient-friendly
 tagline that describes that month's progression. Also return exactly three simple, low-risk steps
 with exerciseName, a lowercase snake_case animationTriggerId, realistic durationSeconds, voiceCue
