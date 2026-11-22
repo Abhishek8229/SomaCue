@@ -2,7 +2,7 @@
   "name": "@somacue/web",
   "version": "0.1.0",
   "private": true,
-  "description": "SomaCue 3D workspace: anatomy and movement demonstrations in one stage.",
+  "description": "SomaCue web app: triage, 3D guided rehab plans, dashboard and Recovery Timeline.",
   "scripts": {
     "dev": "next dev --port 3100",
     "build": "next build",
