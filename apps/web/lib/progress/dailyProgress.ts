@@ -63,10 +63,18 @@ export type ResetDayResult =
     }
   | ActionFailure;
 export type SubmitFeedbackResult =
-  | { success: true; rescheduled: true; schedule: ScheduleWithSteps; escalation?: null }
+  | {
+      success: true;
+      rescheduled: true;
+      schedule: ScheduleWithSteps;
+      escalation?: null;
+      /** The dynamic precautions rebuilt after this feedback, for the sidebar. */
+      dynamicPrecautions?: import("@/lib/precautions/precautions").DynamicPrecautions | null;
+    }
   | {
       success: true;
       rescheduled: false;
+      dynamicPrecautions?: import("@/lib/precautions/precautions").DynamicPrecautions | null;
       rescheduleError?: "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT";
       /** Set when this feedback showed the case needs in-person care. */
       escalation?: Escalation | null;

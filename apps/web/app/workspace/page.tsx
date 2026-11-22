@@ -7,7 +7,9 @@ import type { TriageQuestion } from "@/actions/generatePlan";
 import { isConditionSource, type DetectedCondition } from "@/lib/clinical/assessment";
 import { toEscalation } from "@/lib/clinical/server-escalation";
 import { reportFilesFromRecord } from "@/lib/intake/reportFiles";
-import { withoutBackups, type DailyProgressRecord } from "@/lib/progress/dailyProgress";
+import { parseDynamicPrecautions, parsePermanentPrecautions, type PlanPrecautions } from "@/lib/precautions/precautions";
+import { legacyPrecautions } from "@/lib/precautions/server";
+import { withoutBackups, type DailyProgressRecord, type StoredTreatmentPlan } from "@/lib/progress/dailyProgress";
 import WorkspaceClient from "./WorkspaceClient";
 import type { TreatmentPlanPayload } from "./WorkspaceParts";
 
@@ -157,11 +159,33 @@ export default async function WorkspacePage({
         }
       : null;
   const initialEscalation = latestReport ? toEscalation(latestReport) : null;
+  // Saved on the plan row with the analysis. A plan made before they existed (null columns) gets a fallback built
+  // from the plan, its week and recent activity: no AI call, nothing written here. It is saved on the first interaction.
+  const savedPermanent = parsePermanentPrecautions(latestReport?.treatmentPlan?.permanentPrecautions);
+  const savedDynamic = parseDynamicPrecautions(latestReport?.treatmentPlan?.dynamicPrecautions);
+  let initialPrecautions: PlanPrecautions | null = null;
+  if (routine && latestReport?.treatmentPlan) {
+    if (savedPermanent && savedDynamic) {
+      initialPrecautions = { permanent: savedPermanent, dynamic: savedDynamic };
+    } else {
+      const stored = latestReport.treatmentPlan.routine as StoredTreatmentPlan;
+      initialPrecautions = await legacyPrecautions(
+        {
+          reportId: latestReport.id,
+          plan: stored,
+          startDateKey: stored.startDateKey ?? latestReport.treatmentPlan.createdAt.toISOString().slice(0, 10),
+          todayKey: new Date().toISOString().slice(0, 10),
+        },
+        { permanent: savedPermanent, dynamic: savedDynamic },
+      );
+    }
+  }
   const initialBilling = await getBillingStatus(user.id);
 
   return (
     <WorkspaceClient
       initialBilling={initialBilling}
+      initialPrecautions={initialPrecautions}
       initialUpgradeTier={initialUpgradeTier}
       userEmail={user.email}
       userName={user.name}

@@ -945,3 +945,130 @@
     transform: none;
   }
 }
+
+/* Recovery Timeline (Patient Case Record) */
+.rtSection {
+  scroll-margin-top: calc(var(--nav-h) + var(--space-md));
+}
+
+.rtSection:focus-visible {
+  outline: 2px solid var(--stage-focus);
+  outline-offset: 4px;
+}
+
+.rtTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.rtButton {
+  min-height: 40px;
+  padding: 0 var(--space-md);
+  border: 1px solid var(--d-rule-strong);
+  background: transparent;
+  color: var(--d-ink);
+  font-size: var(--text-ui);
+}
+
+.rtButton:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.rtStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rtStat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--d-rule);
+  border-radius: var(--radius-input);
+  background: var(--d-well);
+}
+
+.rtStatValue {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rtStatLabel {
+  color: var(--d-muted);
+  font-size: var(--text-ui);
+}
+
+.rtControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.rtFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.rtFilter {
+  min-height: 36px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--d-rule-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--d-ink-2);
+  font-family: inherit;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.rtFilter:hover {
+  border-color: var(--d-signal);
+}
+
+.rtFilter[aria-pressed="true"] {
+  border-color: var(--d-signal);
+  background: var(--d-signal-soft);
+  color: var(--d-ink);
+}
+
+.rtFilter:focus-visible,
+.rtButton:focus-visible {
+  outline: 2px solid var(--stage-focus);
+  outline-offset: 2px;
+}
+
+.event[data-tone="good"]::before {
+  border-color: var(--d-signal);
+}
+
+.event[data-tone="warn"]::before {
+  border-color: var(--d-amber);
+}
+
+.event[data-tone="alert"]::before {
+  border-color: var(--d-alert);
+}
+
+.rtDetail {
+  margin: var(--space-2xs) 0 0;
+  color: var(--d-ink-2);
+  font-size: var(--text-ui);
+  overflow-wrap: anywhere;
+}

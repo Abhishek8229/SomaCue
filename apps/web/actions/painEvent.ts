@@ -20,6 +20,9 @@ import {
   type ReportPainResult,
   type ReschedulePainResult,
 } from "@/lib/progress/painEvent";
+import { refreshDynamicPrecautions } from "@/lib/precautions/server";
+import { logRecoveryEvents } from "@/lib/recovery/server";
+import { adjustEvent, painOverrideEvent } from "@/lib/recovery/timeline";
 import { fail, loadOwnedPlan, validateDateKey } from "@/lib/progress/server-plan";
 
 /**
@@ -74,9 +77,33 @@ export async function reportPainEvent(
     }),
   ]);
 
+  // The stop is on the Recovery Timeline as soon as it is saved.
+  await logRecoveryEvents(owned.userId, () =>
+    painOverrideEvent({
+      id: event.id,
+      reportId,
+      dateKey,
+      painType: input.painType,
+      regions: [...new Set(input.regions)],
+      exerciseNames,
+      details: input.details,
+      at: event.createdAt,
+    }),
+  );
+
   revalidatePath("/workspace");
   const escalation = await checkProgressEscalation(reportId, dateKey);
-  return { success: true, eventId: event.id, escalation };
+  // The stop is saved. Now the dynamic precautions follow it, without an AI call and without ever failing the report.
+  const dynamicPrecautions = await refreshDynamicPrecautions({
+    treatmentPlanId: owned.treatmentPlanId,
+    reportId,
+    plan: owned.plan,
+    startDateKey: owned.startDateKey,
+    todayKey: dateKey,
+    kind: "pain_override",
+    patientId: owned.userId,
+  });
+  return { success: true, eventId: event.id, escalation, dynamicPrecautions };
 }
 
 /**
@@ -135,6 +162,8 @@ export async function reschedulePainEvent(reportId: string, eventId: string): Pr
       data: { rescheduledAt: new Date() },
     }),
   ]);
+
+  await logRecoveryEvents(owned.userId, () => adjustEvent({ reportId, dateKey: event.dateKey, cause: "pain", at: new Date() }));
 
   revalidatePath("/workspace");
   return { success: true, schedule };

@@ -111,12 +111,16 @@ const treatmentPlanSchema = z
     path: ["phases"],
   });
 
+// The precautions ride in the same response as the plan (no extra AI call). The lists are accepted
+// loosely here and trimmed, de-duplicated and capped at 5 when saved (see lib/precautions).
 const aiTreatmentPlanSchema = z
   .object({
     durationMonths: z.number().int().min(1).max(12),
     phases: z.array(treatmentPhaseSchema).min(1).max(12),
     steps: z.array(aiTreatmentStepSchema).length(3),
     schedule: treatmentScheduleSchema,
+    permanentPrecautions: z.array(z.string().min(1)).min(1).max(10),
+    dynamicPrecautions: z.array(z.string().min(1)).min(1).max(10),
   })
   .refine((plan) => plan.phases.length === plan.durationMonths, {
     message: "There must be exactly one phase for each plan month.",
@@ -401,8 +405,15 @@ Return a rolling schedule for only the next 3 to 7 days, with one entry per day 
 starting at 0 for today. Mark today active, future days upcoming, and recovery days rest. Each entry
 must include a concise focus and patient-friendly tagline. Do not generate the full multi-month calendar.
 If the answers or reports suggest a red flag or professional assessment, keep the routine gentle and
-include a safety-oriented instruction in the voice cue. Return JSON with durationMonths, phases, steps,
-and schedule.`,
+include a safety-oriented instruction in the voice cue.
+Also return two short bullet lists in plain language for this patient, 3 to 5 bullets each, every bullet
+one sentence of at most 160 characters:
+- permanentPrecautions: condition-level precautions that hold for the whole recovery: movements to avoid,
+  posture rules, and the red-flag signs that mean stop and get medical help. Base them on the condition
+  the evidence points to and the quiz answers, never generic filler.
+- dynamicPrecautions: the precautions that apply during week 1 of this plan, matched to its first phase
+  and exercises (for example how much range or effort to use, and what to watch for as you start).
+Return JSON with durationMonths, phases, steps, schedule, permanentPrecautions and dynamicPrecautions.`,
       messages: [
         {
           role: "user",
@@ -418,7 +429,9 @@ Synthesize the final baseline rehabilitation timeline from all available evidenc
       ],
     });
 
-    return { success: true, routine: object } as const;
+    // The precautions are stored beside the plan, not inside it.
+    const { permanentPrecautions, dynamicPrecautions, ...routine } = object;
+    return { success: true, routine, precautions: { permanentPrecautions, dynamicPrecautions } } as const;
   } catch (error) {
     logAiFailure(error, "Final routine generation");
     return { success: false, error: getAiFailure(error) } satisfies AIProviderFailure;

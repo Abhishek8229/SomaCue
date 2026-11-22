@@ -23,7 +23,10 @@ import { speechEnabled, useStageController } from "@/components/stage/useStageCo
 import { AnalysisProgress } from "@/components/workspace/AnalysisProgress";
 import { ConditionCard } from "@/components/workspace/ConditionCard";
 import { EscalationAlert } from "@/components/workspace/EscalationAlert";
+import { PrecautionsCard } from "@/components/workspace/PrecautionsCard";
+import { RecoveryTimelineLink } from "@/components/workspace/RecoveryTimelineLink";
 import { RehabChatDrawer } from "@/components/workspace/RehabChatDrawer";
+import { precautionsAreStale, type DynamicPrecautions, type PlanPrecautions } from "@/lib/precautions/precautions";
 import { quickPrompts } from "@/lib/clinical/chatGuardrails";
 import { DailyPrescriptionPanel } from "@/components/workspace/DailyPrescriptionPanel";
 import { FeedbackModal } from "@/components/workspace/FeedbackModal";
@@ -211,11 +214,14 @@ export default function WorkspacePage({
   userEmail,
   userName,
   initialUpgradeTier = null,
+  initialPrecautions = null,
 }: {
   userName?: string;
   userEmail?: string;
   /** The plan and usage the server resolved for this user. */
   initialBilling: BillingStatus;
+  /** Precautions saved with the plan, read from the database with the page. */
+  initialPrecautions?: PlanPrecautions | null;
   /** Open the Upgrade dialog on this tier at load (a link from the pricing page). */
   initialUpgradeTier?: ProTier | null;
   /** ISO time the saved plan was created, which is when Day 1 began. */
@@ -263,6 +269,11 @@ export default function WorkspacePage({
   const currentPlan = billing.billing.plan;
   const [triageQuiz, setTriageQuiz] = useState(initialQuiz);
   const [activeReportId, setActiveReportId] = useState(reportId);
+  /** The Precautions card: permanent from the analysis, dynamic rebuilt by the server as the plan moves. */
+  const [precautions, setPrecautions] = useState(initialPrecautions);
+  const applyDynamicPrecautions = (dynamic: DynamicPrecautions | null | undefined) => {
+    if (dynamic) setPrecautions((current) => (current ? { ...current, dynamic } : current));
+  };
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
   const [flowPhase, setFlowPhase] = useState<FlowPhase>(
     hasActivePlan || initialEscalation ? "ready" : initialQuiz ? "quiz" : "discovery",
@@ -297,16 +308,25 @@ export default function WorkspacePage({
   );
   const treatmentPlan = reconciled?.plan ?? storedPlan;
   const needsScheduleSave = reconciled?.changed === true && !escalation;
+  // A new week or phase changes the dynamic precautions; the server rebuilds them on the same sync.
+  const precautionDay = treatmentPlan?.startDateKey ? daysBetween(treatmentPlan.startDateKey, todayKey) + 1 : null;
+  const precautionsStale =
+    precautions !== null &&
+    precautionDay !== null &&
+    !escalation &&
+    precautionsAreStale(precautions.dynamic, precautionDay, treatmentPlan?.phases.length ?? 1);
   useEffect(() => {
-    if (!needsScheduleSave || !activeReportId) return;
+    if ((!needsScheduleSave && !precautionsStale) || !activeReportId) return;
     let cancelled = false;
     void syncSchedule(activeReportId, todayKey, fallbackStartKey).then((saved) => {
-      if (!cancelled && saved.success) setTreatmentPlan(saved.plan);
+      if (cancelled || !saved.success) return;
+      if (needsScheduleSave) setTreatmentPlan(saved.plan);
+      applyDynamicPrecautions(saved.dynamicPrecautions);
     });
     return () => {
       cancelled = true;
     };
-  }, [needsScheduleSave, activeReportId, todayKey, fallbackStartKey]);
+  }, [needsScheduleSave, precautionsStale, activeReportId, todayKey, fallbackStartKey]);
   const pendingNotice = activeSkipNotice(treatmentPlan);
   const skipNotice = pendingNotice && pendingNotice.noticedOn !== noticeDismissedOn ? pendingNotice : null;
   const handleDismissSkipNotice = () => {
@@ -519,6 +539,7 @@ export default function WorkspacePage({
     setReportsSubmitted(false);
     setPlanUnlocked(false);
     setTreatmentPlan(null);
+    setPrecautions(null);
     setTriageQuiz(null);
     setActiveReportId(null);
     setQuizAnswers({});
@@ -687,6 +708,7 @@ export default function WorkspacePage({
         return;
       }
       updateProgress(todayKey, { stopped: true, stopRegions: submission.regions });
+      applyDynamicPrecautions(result.dynamicPrecautions);
       setPainFlow((flow) =>
         flow
           ? { ...flow, open: false, submitting: false, regions: submission.regions, eventId: result.eventId }
@@ -738,6 +760,7 @@ export default function WorkspacePage({
 
       // The day is saved as completed even when the schedule update fails.
       updateProgress(dateKey, { completed: true, feedback: submission.feedback });
+      applyDynamicPrecautions(result.dynamicPrecautions);
       if (!result.rescheduled && result.escalation) {
         lockForInPersonCare(result.escalation);
       } else if (result.rescheduled) {
@@ -787,6 +810,7 @@ export default function WorkspacePage({
       );
       if (!("error" in result)) {
         const { escalation: found, routine: plan } = result;
+        const madePrecautions = "precautions" in result ? result.precautions : null;
         setArrivalMessage(found ? "Your assessment is ready." : null);
         setPendingArrival(() => () => {
           if (found || !plan) {
@@ -798,6 +822,7 @@ export default function WorkspacePage({
           // Analysis day is Day 1: the new plan starts counting today.
           setFreshPlanKey(toDateKey(new Date()));
           setTreatmentPlan(plan);
+          setPrecautions(madePrecautions ?? null);
           setPlanUnlocked(true);
           setFlowPhase("ready");
         });
@@ -971,6 +996,13 @@ export default function WorkspacePage({
             onRerunAnalysis={handleRerunAnalysis}
             onTriageReady={handleTriageReady}
             reportsSubmitted={reportsSubmitted}
+            hideCrossQuestioning={planUnlocked}
+            timelineLink={activeReportId && !isFlowLocked ? <RecoveryTimelineLink /> : null}
+            precautions={
+              precautions && planUnlocked && !escalation ? (
+                <PrecautionsCard dynamic={precautions.dynamic} permanent={precautions.permanent} reportId={activeReportId} todayKey={todayKey} />
+              ) : null
+            }
             summary={condition ? <ConditionCard condition={condition} escalation={escalation} /> : null}
           />
           {!isFlowLocked ? (

@@ -63,6 +63,12 @@ type SidebarIntakeProps = {
   onTriageReady: (result: TriageReadyResult) => void;
   /** Rendered under the intake form, e.g. the detected-condition card. */
   summary?: ReactNode;
+  /** Rendered right under the summary and above the adaptive intake card: the Precautions card. */
+  precautions?: ReactNode;
+  /** Hides the Cross-questioning card. It only helps before the quiz is done, so it goes once the plan exists. */
+  hideCrossQuestioning?: boolean;
+  /** A small pointer to the Recovery Timeline on the Dashboard, shown at the top of the rail so it is seen without scrolling. */
+  timelineLink?: ReactNode;
   onError: (message: string) => void;
   /** The server refused a new analysis because the free one is used up. */
   onProRequired?: () => void;
@@ -228,6 +234,9 @@ export function SidebarIntake({
   onProRequired,
   onRerunAnalysis,
   summary,
+  precautions,
+  hideCrossQuestioning = false,
+  timelineLink,
 }: SidebarIntakeProps) {
   const [draggingZone, setDraggingZone] = useState<ReportCategory | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
@@ -396,6 +405,8 @@ export function SidebarIntake({
 
   return (
     <>
+      {timelineLink}
+
       <form
         className="workspace-panel rounded-2xl border border-white/15 bg-zinc-900 p-4"
         onSubmit={handleSubmit}
@@ -525,22 +536,26 @@ export function SidebarIntake({
 
       {summary}
 
-      <section className={`workspace-panel rounded-2xl border border-white/15 bg-zinc-900 p-4 ${!reportsSubmitted ? "opacity-65" : ""}`}>
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="mb-1 text-[9px] font-medium text-emerald-300">Adaptive intake</p>
-            <h2 className="text-base font-medium tracking-tight">Cross-questioning</h2>
+      {precautions}
+
+      {hideCrossQuestioning ? null : (
+        <section className={`workspace-panel rounded-2xl border border-white/15 bg-zinc-900 p-4 ${!reportsSubmitted ? "opacity-65" : ""}`}>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="mb-1 text-[9px] font-medium text-emerald-300">Adaptive intake</p>
+              <h2 className="text-base font-medium tracking-tight">Cross-questioning</h2>
+            </div>
+            <span className="rounded-md bg-emerald-300/15 px-2 py-1 font-mono text-[9px] text-emerald-300">
+              {reportsSubmitted ? "AI ready" : "Locked"}
+            </span>
           </div>
-          <span className="rounded-md bg-emerald-300/15 px-2 py-1 font-mono text-[9px] text-emerald-300">
-            {reportsSubmitted ? "AI ready" : "Locked"}
-          </span>
-        </div>
-        <p className="mt-5 text-sm leading-relaxed text-white/85">
-          {reportsSubmitted
-            ? "Your tailored triage questions are ready."
-            : "Submit symptoms to generate adaptive questions."}
-        </p>
-      </section>
+          <p className="mt-5 text-sm leading-relaxed text-white/85">
+            {reportsSubmitted
+              ? "Your tailored triage questions are ready."
+              : "Submit symptoms to generate adaptive questions."}
+          </p>
+        </section>
+      )}
     </>
   );
 }

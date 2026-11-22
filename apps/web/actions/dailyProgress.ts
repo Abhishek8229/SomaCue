@@ -22,6 +22,10 @@ import {
   type SubmitFeedbackResult,
   type ToggleExerciseResult,
 } from "@/lib/progress/dailyProgress";
+import type { DynamicPrecautions } from "@/lib/precautions/precautions";
+import { refreshDynamicPrecautions, refreshForProgress } from "@/lib/precautions/server";
+import { logRecoveryEvents } from "@/lib/recovery/server";
+import { adjustEvent, feedbackEvent, missedDayEvent, sessionEvent } from "@/lib/recovery/timeline";
 import { reconcileSchedule } from "@/lib/progress/schedule";
 import {
   STOPPED_MESSAGE,
@@ -189,16 +193,41 @@ export async function submitDailyFeedback(
     update: feedbackData,
   });
 
+  // The finished session and how it felt go on the Recovery Timeline, kept even if the day is reset later.
+  await logRecoveryEvents(owned.userId, () => [
+    sessionEvent({ reportId, dateKey, exercises: existing?.completedExercises ?? [], at: feedbackData.completedAt }),
+    feedbackEvent({
+      reportId,
+      dateKey,
+      feedback: feedback.feedback,
+      discomfortExercises,
+      discomfortDetails: feedbackData.discomfortDetails,
+      notes: feedbackData.notes,
+      at: feedbackData.completedAt,
+    }),
+  ]);
+
+  // The precautions follow the feedback right away (no AI call), so they are right even if the reschedule fails.
+  const dynamicPrecautions = await refreshDynamicPrecautions({
+    treatmentPlanId: owned.treatmentPlanId,
+    reportId,
+    plan: owned.plan,
+    startDateKey: owned.startDateKey,
+    todayKey: dateKey,
+    kind: "feedback",
+    patientId: owned.userId,
+  });
+
   // Repeated pain or no improvement locks the plan for in-person care; no reschedule then.
   const escalation = await checkProgressEscalation(reportId, dateKey);
   if (escalation) {
     revalidatePath("/workspace");
-    return { success: true, rescheduled: false, escalation };
+    return { success: true, rescheduled: false, escalation, dynamicPrecautions };
   }
 
   if (feedback.feedback !== "issue") {
     revalidatePath("/workspace");
-    return { success: true, rescheduled: false };
+    return { success: true, rescheduled: false, dynamicPrecautions };
   }
 
   const rescheduleResult = await rescheduleTreatmentPlan(
@@ -212,14 +241,14 @@ export async function submitDailyFeedback(
   });
   if (!rescheduleResult.success) {
     revalidatePath("/workspace");
-    return { success: true, rescheduled: false, rescheduleError: rescheduleResult.error };
+    return { success: true, rescheduled: false, rescheduleError: rescheduleResult.error, dynamicPrecautions };
   }
 
   const problem = findRescheduleProblem(rescheduleResult.schedule, discomfortExercises);
   if (problem) {
     console.error("[SomaCue AI] Rescheduled plan rejected.", { problem });
     revalidatePath("/workspace");
-    return { success: true, rescheduled: false, rescheduleError: "AI_PROVIDER_FAILED" };
+    return { success: true, rescheduled: false, rescheduleError: "AI_PROVIDER_FAILED", dynamicPrecautions };
   }
 
   const schedule = await repairSchedule(
@@ -239,13 +268,21 @@ export async function submitDailyFeedback(
     }),
     prisma.dailyProgress.update({ where, data: { rescheduledAt: new Date() } }),
   ]);
+  await logRecoveryEvents(owned.userId, () => adjustEvent({ reportId, dateKey, cause: "feedback", at: new Date() }));
 
   revalidatePath("/workspace");
-  return { success: true, rescheduled: true, schedule };
+  return { success: true, rescheduled: true, schedule, dynamicPrecautions };
 }
 
 export type SyncScheduleResult =
-  | { success: true; plan: StoredTreatmentPlan; skippedDateKeys: string[]; changed: boolean }
+  | {
+      success: true;
+      plan: StoredTreatmentPlan;
+      skippedDateKeys: string[];
+      changed: boolean;
+      /** The dynamic precautions, rebuilt if a day was missed or the plan moved into a new week or phase. */
+      dynamicPrecautions: DynamicPrecautions | null;
+    }
   | ActionFailure;
 
 /**
@@ -293,11 +330,26 @@ export async function syncSchedule(
     });
   }
 
+  // Every day that passed with no exercise goes on the Recovery Timeline.
+  await logRecoveryEvents(owned.userId, () => result.skippedDateKeys.map((dateKey) => missedDayEvent({ reportId, dateKey })));
+
+  // A missed day, or a new week or phase, rebuilds the dynamic precautions (no AI call).
+  const dynamicPrecautions = await refreshForProgress({
+    patientId: owned.userId,
+    treatmentPlanId: owned.treatmentPlanId,
+    reportId,
+    plan: result.plan,
+    startDateKey: owned.startDateKey,
+    todayKey,
+    newlyMissedDays: result.skippedDateKeys.length,
+  });
+
   return {
     success: true,
     plan: withoutBackups(result.plan),
     skippedDateKeys: result.skippedDateKeys,
     changed: result.changed,
+    dynamicPrecautions,
   };
 }
 

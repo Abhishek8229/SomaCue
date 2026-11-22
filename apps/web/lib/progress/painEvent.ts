@@ -55,6 +55,8 @@ export type ReportPainResult =
       eventId: string;
       /** Set when this stop showed the case needs in-person care. */
       escalation?: import("@/lib/clinical/assessment").Escalation | null;
+      /** The dynamic precautions rebuilt after this stop, for the sidebar. null when the plan has none. */
+      dynamicPrecautions?: import("@/lib/precautions/precautions").DynamicPrecautions | null;
     }
   | { success: false; error: string };
 

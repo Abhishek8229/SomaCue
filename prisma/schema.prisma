@@ -23,6 +23,7 @@ model User {
   patientAssessments   ClinicalAssessment[] @relation("PatientAssessments")
   clinicianAssessments ClinicalAssessment[] @relation("ClinicianAssessments")
   chatMessages         ChatMessage[]
+  recoveryEvents       RecoveryEvent[]
   subscription         Subscription?
   proPurchases         ProPurchase[]
 }
@@ -82,6 +83,7 @@ model ClinicalReport {
   dailyProgress DailyProgress[]
   painEvents    PainEvent[]
   chatMessages  ChatMessage[]
+  recoveryEvents RecoveryEvent[]
 
   @@index([patientId])
   @@index([createdAt])
@@ -109,6 +111,33 @@ model ChatMessage {
 
   @@index([patientId, createdAt])
   @@index([clinicalReportId, createdAt])
+}
+
+/// One entry of the patient's Recovery Timeline (Patient Case Record), written as things happen.
+/// Existing history is also derived at read time from the reports, plans, daily logs and pain events,
+/// and merged by dedupeKey, so the timeline works for accounts that predate this table.
+model RecoveryEvent {
+  id               String   @id @default(uuid())
+  patientId        String
+  clinicalReportId String?
+  /// analysis, plan, week, missed_day, session, feedback, pain_override, plan_adjusted, precaution, chat_insight, escalation
+  kind             String
+  title            String
+  detail           String?
+  /// The local YYYY-MM-DD the event belongs to, for events that are about a day.
+  dateKey          String?
+  occurredAt       DateTime @db.Timestamptz(3)
+  /// Small structured facts for the trends: { feedback, regions, painType }. Null when there are none.
+  meta             Json?    @db.JsonB
+  /// Stable per fact (for example "feedback:<report>:<day>"), so logging twice or deriving the same fact adds nothing.
+  dedupeKey        String
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  patient        User            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicalReport ClinicalReport? @relation(fields: [clinicalReportId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, dedupeKey])
+  @@index([patientId, occurredAt])
 }
 
 model PainEvent {
@@ -179,6 +208,10 @@ model TreatmentPlan {
   id              String         @id @default(uuid())
   clinicalReportId String         @unique
   routine         Json           @db.JsonB
+  /// Condition-level precautions from the analysis: a JSON array of 3 to 5 short strings. Null for plans made before this existed.
+  permanentPrecautions Json?      @db.JsonB
+  /// Precautions for the plan's current week and recent sessions: { items, badge, kind, updatedAt, seenAt, weekNumber, phaseIndex, base }. See lib/precautions.
+  dynamicPrecautions   Json?      @db.JsonB
   createdAt       DateTime       @default(now()) @db.Timestamptz(3)
 
   clinicalReport ClinicalReport @relation(fields: [clinicalReportId], references: [id], onDelete: Cascade)

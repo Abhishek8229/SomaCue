@@ -5,6 +5,9 @@ const db = vi.hoisted(() => ({
   user: { id: "patient-1", name: "Abhishek Kumar Tiwari" } as { id: string; name: string } | null,
   report: null as Record<string, unknown> | null,
   messages: [] as Array<Record<string, unknown>>,
+  /** Recovery Timeline rows the chat route logged */
+  timeline: [] as Array<Record<string, unknown>>,
+  failTimeline: false,
   /** when the user's recent messages were sent: the Pro fair-use limits read these */
   recentTimes: [] as Date[],
   /** user messages ever sent: the Free plan allows 3 in total */
@@ -40,6 +43,14 @@ vi.mock("@/lib/db/prisma", () => {
       findUnique: async () => db.subscription,
     },
     treatmentPlan: { findFirst: async () => (db.planCreatedAt ? { createdAt: db.planCreatedAt } : null) },
+    // the Recovery Timeline log
+    recoveryEvent: {
+      upsert: async ({ where, create }: { where: { patientId_dedupeKey: { dedupeKey: string } }; create: Record<string, unknown> }) => {
+        if (db.failTimeline) throw new Error("database unavailable");
+        if (!db.timeline.some((row) => row.dedupeKey === where.patientId_dedupeKey.dedupeKey)) db.timeline.push(create);
+        return create;
+      },
+    },
     clinicalReport: {
       findFirst: async ({ where }: { where: { id: string; patientId: string } }) =>
         db.report && db.report.id === where.id && db.report.patientId === where.patientId ? db.report : null,
@@ -48,8 +59,9 @@ vi.mock("@/lib/db/prisma", () => {
       // The lifetime count (Free plan).
       count: async () => db.sentTotal,
       create: async ({ data }: { data: Record<string, unknown> }) => {
-        db.messages.push({ ...data, createdAt: new Date() });
-        return data;
+        const row = { id: `msg-${db.messages.length + 1}`, ...data, createdAt: new Date() };
+        db.messages.push(row);
+        return row;
       },
       createMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
         db.messages.push(...data.map((row) => ({ ...row, createdAt: new Date() })));
@@ -103,6 +115,8 @@ beforeEach(() => {
   db.planCreatedAt = null;
   db.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
   db.messages.length = 0;
+  db.timeline.length = 0;
+  db.failTimeline = false;
   db.report = {
     id: "report-1",
     patientId: "patient-1",
@@ -436,5 +450,57 @@ describe("Pro plan: unlimited in practice, with a 50 messages in 7 days fair-use
     db.subscription = { status: "cancelled", cancelAtPeriodEnd: true, currentPeriodEnd: new Date(Date.now() + 86_400_000) };
     db.sentTotal = 100;
     expect((await post("Walk me through today's exercises")).status).toBe(200);
+  });
+});
+
+describe("Recovery Timeline capture from the chat", () => {
+  it("logs a clinically useful update the patient describes, in their own words", async () => {
+    const response = await post("My knee hurts when I climb stairs. Thanks for the plan!");
+    expect(response.status).toBe(200);
+    expect(db.timeline).toHaveLength(1);
+    expect(db.timeline[0]).toMatchObject({
+      patientId: "patient-1",
+      clinicalReportId: "report-1",
+      kind: "chat_insight",
+      title: expect.stringMatching(/in chat$/),
+      detail: '"My knee hurts when I climb stairs."',
+    });
+    expect(String(db.timeline[0].dedupeKey)).toMatch(/^chat:msg-/);
+  });
+
+  it("logs nothing for casual, generic or question-only messages, and they still get an answer", async () => {
+    for (const message of ["Hi, thanks for the help!", "What is a disc bulge?", "Can I do the glute bridge every day?"]) {
+      const response = await post(message);
+      expect(response.status).toBe(200);
+    }
+    expect(db.timeline).toHaveLength(0);
+    expect(db.streamText).toHaveBeenCalledTimes(3);
+  });
+
+  it("adds no AI call: the capture is plain rules", async () => {
+    await post("I noticed new tingling in my left foot today.");
+    expect(db.timeline).toHaveLength(1);
+    expect(db.streamText).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not log off-topic messages", async () => {
+    await post("Write a Python script to sort a list");
+    expect(db.timeline).toHaveLength(0);
+  });
+
+  it("logs a warning-sign message too, because it matters clinically", async () => {
+    const response = await post("My leg is getting weaker every day and I can't control my bladder");
+    expect(response.headers.get("X-Chat-Guard")).toBe("red_flag");
+    expect(db.timeline).toHaveLength(1);
+    expect(db.timeline[0]).toMatchObject({ kind: "chat_insight" });
+  });
+
+  it("never fails the chat if the timeline cannot be written", async () => {
+    db.failTimeline = true;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await post("My back hurts when I bend forward.");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("Here is your plan.");
+    spy.mockRestore();
   });
 });

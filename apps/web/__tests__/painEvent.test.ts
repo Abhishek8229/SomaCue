@@ -86,6 +86,8 @@ vi.mock("@/lib/db/prisma", () => {
       findUnique: async () => db.subscription,
     },
     treatmentPlan: {
+      // A plan made before precautions existed has none: the Pain Override report must work the same.
+      findUnique: async () => ({ permanentPrecautions: null, dynamicPrecautions: null }),
       update: async ({ data }: { data: { routine: unknown } }) => {
         db.routineWrites.push(data.routine);
         return {};
@@ -127,7 +129,7 @@ beforeEach(() => {
 describe("reportPainEvent", () => {
   it("saves the report and marks the day stopped, not completed", async () => {
     const result = await reportPainEvent("report-1", today, report);
-    expect(result).toEqual({ success: true, eventId: "event-1", escalation: null });
+    expect(result).toEqual({ success: true, eventId: "event-1", escalation: null, dynamicPrecautions: null });
     expect(db.painEvents[0]).toMatchObject({
       patientId: "patient-1",
       dateKey: today,

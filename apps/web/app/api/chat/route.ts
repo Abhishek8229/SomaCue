@@ -13,6 +13,7 @@ import {
   type ChatGuard,
 } from "@/lib/clinical/chatGuardrails";
 import { loadChatContext } from "@/lib/clinical/server-chat";
+import { recordChatInsight } from "@/lib/recovery/server";
 import { prisma } from "@/lib/db/prisma";
 
 const CHAT_TIMEOUT_MS = 45_000;
@@ -136,12 +137,17 @@ export async function POST(request: Request) {
 
   // Guarded messages are answered here, without any AI call.
   if (screen.action === "guard") {
+    const userMessageId = crypto.randomUUID();
     await prisma.chatMessage.createMany({
       data: [
-        { ...conversation, role: "user", content: text },
+        { id: userMessageId, ...conversation, role: "user", content: text },
         { ...conversation, role: "assistant", content: screen.reply, guard: screen.guard },
       ],
     });
+    // A warning-sign message is clinically important, so it goes on the Recovery Timeline. Off-topic and blocked ones do not.
+    if (screen.guard === "red_flag") {
+      await recordChatInsight(user.id, { id: userMessageId, reportId, content: text, createdAt: new Date() }, { redFlag: true });
+    }
     return new Response(screen.reply, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
@@ -176,7 +182,10 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  await prisma.chatMessage.create({ data: { ...conversation, role: "user", content: text } });
+  const userMessage = await prisma.chatMessage.create({ data: { ...conversation, role: "user", content: text } });
+  // Symptoms, triggers, movement trouble or progress the patient describes go on the Recovery Timeline.
+  // Plain rules on the message already sent: no extra AI call, so no extra tokens or delay.
+  await recordChatInsight(user.id, { id: userMessage.id, reportId, content: text, createdAt: userMessage.createdAt });
 
   const previous = trimHistory(
     history

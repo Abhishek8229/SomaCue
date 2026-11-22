@@ -9,6 +9,7 @@ import {
 } from "./generatePlan";
 import { getCurrentUser } from "@/lib/auth/session";
 import { checkAnalysisAllowed } from "@/lib/billing/entitlements";
+import { initialPrecautions } from "@/lib/precautions/precautions";
 import {
   deriveConditionSource,
   screenQuizAnswers,
@@ -26,6 +27,7 @@ import {
 import { storeUpload } from "@/lib/intake/storage";
 import { validateUploadFile } from "@/lib/intake/uploadGuard";
 import { repairPlan } from "@/lib/kinematics/plan-repair";
+import { recordAnalysis, recordPlan, reportHasPlan } from "@/lib/recovery/server";
 
 function readUploadUrls(formData: FormData, field: string) {
   const urls = [
@@ -122,6 +124,15 @@ export async function submitIntakeForm(formData: FormData) {
     careReason,
   };
   const escalatedAt = requiresInPersonCare ? new Date() : null;
+
+  // The first line of the Recovery Timeline. Logging never fails the analysis.
+  await recordAnalysis(user.id, {
+    id: report.id,
+    createdAt: report.createdAt,
+    primarySymptoms: report.primarySymptoms,
+    conditionTitle: condition.title,
+    conditionSummary: condition.summary,
+  });
 
   await prisma.clinicalReport.update({
     where: { id: report.id },
@@ -297,10 +308,32 @@ export async function completeTriageQuiz(
   // Validate and clamp every movement on the real body before saving.
   const routine = await repairPlan(routineResult.routine);
 
+  // The precautions came with the plan in the same AI response. They are saved on the plan row, so
+  // /workspace loads them straight from the database. A re-run replaces both lists with the new ones.
+  const precautions = initialPrecautions(routineResult.precautions);
+  const isRerun = await reportHasPlan(reportId);
   const treatmentPlan = await prisma.treatmentPlan.upsert({
     where: { clinicalReportId: reportId },
-    create: { clinicalReportId: reportId, routine },
-    update: { routine, createdAt: new Date() },
+    create: {
+      clinicalReportId: reportId,
+      routine,
+      permanentPrecautions: precautions.permanent,
+      dynamicPrecautions: precautions.dynamic,
+    },
+    update: {
+      routine,
+      permanentPrecautions: precautions.permanent,
+      dynamicPrecautions: precautions.dynamic,
+      createdAt: new Date(),
+    },
+  });
+
+  // Logged as it happens, so a later re-run cannot erase this plan from the timeline.
+  await recordPlan(user.id, {
+    reportId,
+    createdAt: treatmentPlan.createdAt,
+    plan: routine,
+    rerun: isRerun,
   });
 
   revalidatePath("/workspace");
@@ -309,6 +342,7 @@ export async function completeTriageQuiz(
     success: true,
     treatmentPlanId: treatmentPlan.id,
     routine,
+    precautions,
     escalation: null,
   } as const;
 }

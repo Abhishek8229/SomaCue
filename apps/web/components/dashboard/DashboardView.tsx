@@ -8,7 +8,9 @@ import type { DashboardModel, DashboardSnapshot, GuardrailMeter } from "@/lib/da
 import { useLocalToday, useLocalUtcOffset } from "@/lib/use-today";
 import { LocalDate } from "./LocalDate";
 import { ArrowRight, Shield } from "./icons";
+import type { RecoveryTimeline } from "@/lib/recovery/timeline";
 import { AdherencePanel, ConditionPanel, HistoryPanel, RecordsPanel, TodayPanel, TrendPanel } from "./panels";
+import { RecoveryTimelinePanel } from "./RecoveryTimelinePanel";
 import styles from "./dashboard.module.css";
 
 function programContext(program: DashboardModel["program"]) {
@@ -140,7 +142,7 @@ function Welcome({ model }: { model: DashboardModel }) {
   );
 }
 
-export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
+export function DashboardView({ snapshot, timeline = null }: { snapshot: DashboardSnapshot; timeline?: RecoveryTimeline | null }) {
   // Today follows the device clock, in the viewer's own time zone.
   const todayKey = useLocalToday();
   const utcOffset = useLocalUtcOffset();
@@ -184,6 +186,7 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
               <AdherencePanel model={model} />
               <TrendPanel model={model} />
             </div>
+            {timeline ? <RecoveryTimelinePanel timeline={timeline} /> : null}
             <div className={`${styles.row} ${styles.rowRecords}`}>
               <RecordsPanel records={model.records} />
               <HistoryPanel history={model.history} />
