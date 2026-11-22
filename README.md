@@ -101,7 +101,7 @@ chronological Recovery Timeline records the whole journey for sharing with a doc
 | 3D | three.js r187, React Three Fiber 9, drei, three-stdlib |
 | Styling | Tailwind CSS 4 and CSS modules over a shared design-token file |
 | Database | PostgreSQL with Prisma 7 (`@prisma/adapter-pg`), tested against Neon |
-| AI | Vercel AI SDK with any OpenAI-compatible provider, configured only by `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
+| AI | Vercel AI SDK with any OpenAI-compatible provider, or Gemini's native API (chosen automatically for `generativelanguage.googleapis.com` or `AQ.` keys), configured only by `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
 | Auth | Google OAuth 2.0 + PKCE, sessions signed with `jose` |
 | Payments | Razorpay (one-time, fixed-term Pro tiers) |
 | Storage | Azure Blob Storage, with a local fallback for development |

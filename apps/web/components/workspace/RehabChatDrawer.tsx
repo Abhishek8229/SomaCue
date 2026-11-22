@@ -261,7 +261,9 @@ export function RehabChatDrawer({ reportId, quickPrompts, onUpgrade }: Props) {
           if (isUsage(data?.usage)) setUsage(data.usage);
           updateReply({ content: data?.error ?? "You have reached the Rehab Companion's message limit for now.", guard: "rate_limit", streaming: false });
         } else {
-          dropReply();
+          // Not answered and not counted: take the unanswered bubbles back and keep the text to send again.
+          setMessages((current) => current.filter((message) => message.id !== replyId && message.id !== userMessage.id));
+          setInput(text);
           setError(data?.error ?? "Your message could not be sent. Please try again.");
         }
         return;

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   user: { id: "patient-1", name: "Abhishek Kumar Tiwari" } as { id: string; name: string } | null,
@@ -24,9 +24,12 @@ const db = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/session", () => ({ getCurrentUser: async () => db.user }));
-vi.mock("@/lib/ai/client", () => {
+vi.mock("@/lib/ai/client", async () => {
+  // Only the model is faked. The reply limit comes from the real function, which reads the AI_* environment.
+  const actual = await vi.importActual<typeof import("@/lib/ai/client")>("@/lib/ai/client");
   class AiConfigError extends Error {}
   return {
+    ...actual,
     AiConfigError,
     // The real one throws AiConfigError when AI_BASE_URL, AI_API_KEY or AI_MODEL is missing.
     getChatModel: () => {
@@ -58,6 +61,11 @@ vi.mock("@/lib/db/prisma", () => {
     chatMessage: {
       // The lifetime count (Free plan).
       count: async () => db.sentTotal,
+      delete: async ({ where }: { where: { id: string } }) => {
+        const index = db.messages.findIndex((row) => row.id === where.id);
+        if (index < 0) throw new Error("not found");
+        return db.messages.splice(index, 1)[0];
+      },
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `msg-${db.messages.length + 1}`, ...data, createdAt: new Date() };
         db.messages.push(row);
@@ -107,7 +115,16 @@ const post = (message: string, reportId: string | null = "report-1") =>
     }),
   );
 
+const OPENAI_ENV = { AI_BASE_URL: "https://ai.example.test/v1", AI_API_KEY: "sk-test-123", AI_MODEL: "vendor/some-model" };
+const GEMINI_ENV = { AI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai/", AI_API_KEY: "AQ.test-key-123", AI_MODEL: "google/gemini-4-hydrogen" };
+const useEnv = (env: Record<string, string>) => {
+  for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
+};
+
+afterEach(() => vi.unstubAllEnvs());
+
 beforeEach(() => {
+  useEnv(OPENAI_ENV);
   db.user = { id: "patient-1", name: "Abhishek Kumar Tiwari" };
   db.recentTimes = [];
   db.sentTotal = 0;
@@ -149,11 +166,12 @@ beforeEach(() => {
     painEvents: [],
   };
   db.streamText.mockReset();
-  db.streamText.mockImplementation((options: { onFinish?: (event: { text: string }) => Promise<void> }) => ({
-    toTextStreamResponse: (init?: ResponseInit) => {
-      void options.onFinish?.({ text: "Here is your plan." });
-      return new Response("Here is your plan.", init);
-    },
+  // Like the AI SDK's `textStream`: text pieces, then onFinish. A provider failure calls onError and yields nothing.
+  db.streamText.mockImplementation((options: { onFinish?: (event: { text: string }) => Promise<void>; onError?: (event: { error: unknown }) => void }) => ({
+    textStream: (async function* () {
+      yield "Here is your plan.";
+      await options.onFinish?.({ text: "Here is your plan." });
+    })(),
   }));
 });
 
@@ -502,5 +520,108 @@ describe("Recovery Timeline capture from the chat", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("Here is your plan.");
     spy.mockRestore();
+  });
+});
+
+describe("the reply limit follows the provider", () => {
+  const limitFor = async () => {
+    await post("Explain my condition");
+    return db.streamText.mock.calls.at(-1)![0].maxOutputTokens;
+  };
+
+  it("keeps 350 tokens for a normal provider", async () => {
+    expect(await limitFor()).toBe(CHAT_LIMITS.maxOutputTokens);
+    expect(CHAT_LIMITS.maxOutputTokens).toBe(350);
+  });
+
+  it("raises it to 1200 for Gemini, whose thinking counts against the limit", async () => {
+    useEnv(GEMINI_ENV);
+    expect(await limitFor()).toBe(1200);
+  });
+
+  it("does the same for an AQ. key behind another base URL", async () => {
+    useEnv({ ...GEMINI_ENV, AI_BASE_URL: "https://proxy.example.test/v1" });
+    expect(await limitFor()).toBe(1200);
+  });
+});
+
+describe("when the AI provider cannot answer", () => {
+  type Options = { onFinish?: (event: { text: string; finishReason?: string }) => Promise<void>; onError?: (event: { error: unknown }) => void };
+  const failWith = (error: unknown) =>
+    db.streamText.mockImplementation((options: Options) => ({
+      textStream: (async function* () {
+        options.onError?.({ error });
+      })(),
+    }));
+
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  it("answers 503 with a clear message, not an empty 200, when the provider is over its quota or busy", async () => {
+    failWith(Object.assign(new Error("You exceeded your current quota"), { statusCode: 429 }));
+    const response = await post("hi");
+    expect(response.status).toBe(503);
+    const data = await response.json();
+    expect(data.error).toMatch(/busy or has reached its limit/);
+    expect(data.error).toMatch(/not counted/);
+    expect(data.reason).toBe("provider");
+    // never the user's own 429 limit, which the chat window reads as "your messages are used up"
+    expect(response.status).not.toBe(429);
+    // the provider's own wording is not shown to the patient
+    expect(JSON.stringify(data)).not.toMatch(/quota|billing|aistudio/i);
+  });
+
+  it("does not keep or count the message that could not be answered", async () => {
+    failWith(new Error("boom"));
+    await post("hi");
+    expect(db.messages).toHaveLength(0);
+  });
+
+  it("says so when the model answered with nothing at all", async () => {
+    db.streamText.mockImplementation(() => ({ textStream: (async function* () {})() }));
+    const response = await post("hi");
+    expect(response.status).toBe(503);
+    expect((await response.json()).error).toMatch(/couldn't answer just now/);
+    expect(db.messages).toHaveLength(0);
+  });
+
+  it("treats a thrown stream error the same way", async () => {
+    db.streamText.mockImplementation(() => ({
+      textStream: (async function* () {
+        throw new Error("socket closed");
+        yield "never";
+      })(),
+    }));
+    const response = await post("hi");
+    expect(response.status).toBe(503);
+    expect(db.messages).toHaveLength(0);
+  });
+
+  it("asks the SDK to retry transient provider errors", async () => {
+    await post("hi");
+    expect(db.streamText.mock.calls[0][0].maxRetries).toBe(2);
+  });
+
+  it("still streams a normal answer and keeps both messages", async () => {
+    const response = await post("Explain my condition");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(await response.text()).toBe("Here is your plan.");
+    expect(db.messages.map((row) => row.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("streams a long answer in order", async () => {
+    db.streamText.mockImplementation((options: Options) => ({
+      textStream: (async function* () {
+        yield "Keep ";
+        yield "it ";
+        yield "gentle.";
+        await options.onFinish?.({ text: "Keep it gentle." });
+      })(),
+    }));
+    const response = await post("How hard should I push?");
+    expect(await response.text()).toBe("Keep it gentle.");
   });
 });

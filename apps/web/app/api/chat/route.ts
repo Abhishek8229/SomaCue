@@ -1,6 +1,6 @@
 import { streamText } from "ai";
 import { z } from "zod";
-import { AiConfigError, getChatModel } from "@/lib/ai/client";
+import { AiConfigError, chatMaxOutputTokens, getChatModel } from "@/lib/ai/client";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getCompanionAllowance, getUserPlan, proRequiredResponse } from "@/lib/billing/entitlements";
 import { messagesLeft, proRequired, type CompanionUsage } from "@/lib/billing/plans";
@@ -194,13 +194,16 @@ export async function POST(request: Request) {
     CHAT_LIMITS.historyMessages,
   );
 
+  let providerError: unknown = null;
   const result = streamText({
     model: chatModel,
     system: buildSystemPrompt(context),
     messages: [...previous, { role: "user", content: text }],
-    maxOutputTokens: CHAT_LIMITS.maxOutputTokens,
+    // 350 for most providers; 1200 on Gemini, whose thinking tokens count against this limit.
+    maxOutputTokens: chatMaxOutputTokens(CHAT_LIMITS.maxOutputTokens),
     temperature: 0.3,
-    maxRetries: 0,
+    // Two retries ride out a provider's brief "high demand" (503) errors; the first answer is awaited below anyway.
+    maxRetries: 2,
     abortSignal: AbortSignal.any([request.signal, AbortSignal.timeout(CHAT_TIMEOUT_MS)]),
     onFinish: async ({ text: reply, finishReason, usage }) => {
       const content = reply.trim();
@@ -211,14 +214,57 @@ export async function POST(request: Request) {
       await prisma.chatMessage.create({ data: { ...conversation, role: "assistant", content } });
     },
     onError: ({ error }) => {
+      providerError = error;
       console.error("[SomaCue chat] AI reply failed.", {
         message: error instanceof Error ? error.message : String(error),
       });
     },
   });
 
-  return result.toTextStreamResponse({
-    headers: { "Cache-Control": "no-store", ...usageAfter },
+  // Wait for the first piece of the answer before replying. If the provider failed (over its quota, busy, a bad key)
+  // or answered with nothing, say so with a 503 instead of an empty 200 that looks like a broken chat. Nothing was
+  // answered, so the saved message is removed and does not count against the patient's limits.
+  const pieces = result.textStream[Symbol.asyncIterator]();
+  let first: IteratorResult<string> | null = null;
+  try {
+    first = await pieces.next();
+  } catch (error) {
+    providerError = providerError ?? error;
+  }
+  if (!first || first.done) {
+    await prisma.chatMessage.delete({ where: { id: userMessage.id } }).catch(() => undefined);
+    return json(
+      {
+        error: providerError
+          ? "The Rehab Companion's AI service is busy or has reached its limit right now. Please try again in a little while. Your message was not counted."
+          : "The Rehab Companion couldn't answer just now. Please try again. Your message was not counted.",
+        reason: "provider",
+      },
+      503,
+      usageHeaders(check.usage),
+    );
+  }
+
+  const encoder = new TextEncoder();
+  const answer = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(first.value));
+    },
+    async pull(controller) {
+      try {
+        const next = await pieces.next();
+        if (next.done) controller.close();
+        else controller.enqueue(encoder.encode(next.value));
+      } catch {
+        controller.close(); // the answer so far stays; the failure is logged by onError
+      }
+    },
+    async cancel() {
+      await pieces.return?.();
+    },
+  });
+  return new Response(answer, {
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", ...usageAfter },
   });
 }
 

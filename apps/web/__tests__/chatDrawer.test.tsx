@@ -204,3 +204,19 @@ describe("Free limits that need Pro", () => {
     expect(screen.getByRole("textbox")).toHaveValue("Last try");
   });
 });
+
+describe("when the Companion cannot answer", () => {
+  it("shows the server's message, takes the unanswered bubble back and keeps the text to send again", async () => {
+    const message = "The Rehab Companion's AI service is busy or has reached its limit right now. Please try again in a little while. Your message was not counted.";
+    mockFetch({ plan: "free", usage: FREE_USAGE }, () => Response.json({ error: message, reason: "provider" }, { status: 503 }));
+    await openDrawer();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("hi");
+    // the unanswered "hi" is not left in the thread
+    expect(screen.queryAllByText("hi", { selector: ":not(textarea)" })).toHaveLength(0);
+  });
+});
