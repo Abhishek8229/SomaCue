@@ -10,26 +10,45 @@ const plan = vi.hoisted(() => ({
   analyses: 0,
 }));
 
-const { create, update, quizCreate, generateTriageQuiz } = vi.hoisted(() => ({
+const { create, update, quizCreate, generateTriageQuiz, generateFinalRoutine, repairPlan, planFind, planUpsert, answerUpsert } = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   quizCreate: vi.fn(),
   generateTriageQuiz: vi.fn(),
+  generateFinalRoutine: vi.fn(),
+  repairPlan: vi.fn(),
+  planFind: vi.fn(),
+  planUpsert: vi.fn(),
+  answerUpsert: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({ getCurrentUser: async () => ({ id: "patient-1" }) }));
 vi.mock("@/lib/db/prisma", () => ({
   prisma: {
     clinicalReport: { create, update, count: async () => plan.analyses },
-    triageQuiz: { create: quizCreate },
+    triageQuiz: {
+      create: quizCreate,
+      findUnique: async () => ({
+        id: "quiz-1",
+        clinicalReportId: "report-1",
+        questions: QUIZ_QUESTIONS,
+        clinicalReport: { id: "report-1", patientId: "patient-1", primarySymptoms: "Low back pain", fileUrls: [], scanUrls: [], prescriptionUrls: [], escalationKind: null, escalationReason: null, escalationEvidence: [], escalatedAt: null },
+      }),
+    },
+    quizAnswer: { upsert: answerUpsert },
+    treatmentPlan: { findUnique: planFind, upsert: planUpsert },
+    recoveryEvent: { upsert: async () => ({}) },
     subscription: { findUnique: async () => plan.subscription },
+    $transaction: async (operations: Array<Promise<unknown>>) => Promise.all(operations),
   },
 }));
-vi.mock("@/actions/generatePlan", () => ({ generateTriageQuiz, generateFinalRoutine: vi.fn() }));
-vi.mock("@/lib/kinematics/plan-repair", () => ({ repairPlan: vi.fn() }));
+vi.mock("@/actions/generatePlan", () => ({ generateTriageQuiz, generateFinalRoutine }));
+vi.mock("@/lib/kinematics/plan-repair", () => ({ repairPlan }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { submitIntakeForm } from "@/actions/intake";
+import { completeTriageQuiz, submitIntakeForm } from "@/actions/intake";
+
+const QUIZ_QUESTIONS = [{ id: "pain_level", question: "How bad?", answerType: "short_text" }];
 
 const SCAN = "/uploads/12f80538-4e07-4160-82c1-48d2dccb3612.jpeg";
 const RX = "https://acct.blob.core.windows.net/patient-scans/279a4232-b42d-47c3-b15f-c9d658848d8d.pdf";
@@ -206,5 +225,73 @@ describe("submitIntakeForm: Discovery analyses by plan", () => {
     expect(await submit()).toMatchObject({ success: false, error: "PRO_REQUIRED" });
     plan.subscription = { status: "cancelled", cancelAtPeriodEnd: true, currentPeriodEnd: new Date(Date.now() + 86_400_000) };
     expect(await submit()).toMatchObject({ success: true });
+  });
+});
+
+describe("completeTriageQuiz: replaying a finished quiz", () => {
+  const ROUTINE = { durationMonths: 2, phases: [{ phase: "Calm", tagline: "Settle it" }], steps: [], schedule: { horizonDays: 1, days: [] } };
+  const ORIGINAL_START = "2026-11-10";
+  const replay = () => completeTriageQuiz("report-1", "quiz-1", { pain_level: "6 out of 10" });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    plan.subscription = null; // Free
+    plan.analyses = 1; // the report being replayed is already an analysis
+    planFind.mockResolvedValue(null);
+    planUpsert.mockResolvedValue({ id: "plan-1", createdAt: new Date("2026-11-10T08:00:00Z") });
+    answerUpsert.mockResolvedValue({});
+    repairPlan.mockImplementation(async (routine: unknown) => routine);
+    generateFinalRoutine.mockResolvedValue({
+      success: true,
+      routine: ROUTINE,
+      precautions: { permanentPrecautions: ["One.", "Two.", "Three."], dynamicPrecautions: ["a", "b", "c"] },
+    });
+  });
+
+  it("makes the first plan for a report, for Free, as usual", async () => {
+    plan.analyses = 0;
+    expect(await replay()).toMatchObject({ success: true, treatmentPlanId: "plan-1" });
+    expect(generateFinalRoutine).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a Free user a second plan for the same report with PRO_REQUIRED, before saving answers or calling the AI", async () => {
+    planFind.mockResolvedValue({ routine: { ...ROUTINE, startDateKey: ORIGINAL_START } });
+    expect(await replay()).toEqual({ success: false, error: "PRO_REQUIRED", feature: "reanalysis" });
+    expect(generateFinalRoutine).not.toHaveBeenCalled();
+    expect(answerUpsert).not.toHaveBeenCalled();
+    expect(planUpsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses it again after a cancelled subscription's paid period is over", async () => {
+    planFind.mockResolvedValue({ routine: { ...ROUTINE, startDateKey: ORIGINAL_START } });
+    plan.subscription = { status: "cancelled", cancelAtPeriodEnd: true, currentPeriodEnd: new Date(Date.now() - 60_000) };
+    expect(await replay()).toMatchObject({ success: false, error: "PRO_REQUIRED" });
+    expect(planUpsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses the replay if the existing-plan lookup fails, rather than letting it through", async () => {
+    planFind.mockRejectedValue(new Error("database unavailable"));
+    await expect(replay()).rejects.toThrow("database unavailable");
+    expect(generateFinalRoutine).not.toHaveBeenCalled();
+    expect(planUpsert).not.toHaveBeenCalled();
+  });
+
+  it("lets Pro re-run it, but keeps the plan's creation time and Day 1, so the window cannot restart", async () => {
+    plan.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
+    planFind.mockResolvedValue({ routine: { ...ROUTINE, startDateKey: ORIGINAL_START } });
+    const result = await replay();
+    expect(result).toMatchObject({ success: true, routine: { startDateKey: ORIGINAL_START } });
+    expect(generateFinalRoutine).toHaveBeenCalledTimes(1);
+
+    const { update, create } = planUpsert.mock.calls[0][0];
+    expect(update).not.toHaveProperty("createdAt");
+    expect(update.routine.startDateKey).toBe(ORIGINAL_START);
+    expect(create).not.toHaveProperty("createdAt");
+  });
+
+  it("leaves a first plan's routine alone when there was no earlier Day 1 to keep", async () => {
+    plan.analyses = 0;
+    await replay();
+    expect(planUpsert.mock.calls[0][0].create.routine).toEqual(ROUTINE);
   });
 });

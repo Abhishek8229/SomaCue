@@ -163,6 +163,31 @@ describe("Free limits that need Pro", () => {
     expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
   });
 
+  it.each([
+    ["total", { totalLeft: 0 }],
+    ["window_ended", { totalLeft: 5, windowEndsAt: new Date(Date.now() - 1000).toISOString() }],
+  ] as const)("still sends a warning-sign message to the server when the Free allowance is over (%s), with no upgrade prompt first", async (limit, usage) => {
+    const reply = "Please stop exercising now. What you describe can be a sign of a serious problem.";
+    const calls = mockFetch({ plan: "free", usage: { ...FREE_USAGE, ...usage }, limit }, () => new Response(reply, { headers: { "X-Chat-Guard": "red_flag" } }));
+    const onUpgrade = await openDrawer();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "I have chest pain and trouble breathing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(1));
+    expect(JSON.parse(String(calls.find((call) => call.init?.method === "POST")?.init?.body))).toMatchObject({ message: "I have chest pain and trouble breathing" });
+    expect(await screen.findByText(/stop exercising now/i)).toBeInTheDocument();
+    expect(onUpgrade).not.toHaveBeenCalled();
+  });
+
+  it("still asks for Pro, without sending, for an ordinary message once the allowance is over", async () => {
+    const calls = mockFetch({ plan: "free", usage: { ...FREE_USAGE, totalLeft: 0 }, limit: "total" });
+    const onUpgrade = await openDrawer();
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Can you explain my plan?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onUpgrade).toHaveBeenCalledTimes(1);
+    expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+  });
   it("says the 7-day window has ended", async () => {
     mockFetch({ plan: "free", usage: { ...FREE_USAGE, totalLeft: 5, windowEndsAt: new Date(Date.now() - 1000).toISOString() }, limit: "window_ended" });
     await openDrawer();

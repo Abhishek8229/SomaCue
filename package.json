@@ -18,11 +18,10 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "verify:interactions": "node scripts/verify-interactions.cjs",
-    "verify:auth": "node scripts/verify-auth.cjs",
     "verify:3d-lab": "node scripts/verify-3d-lab.cjs",
     "verify:lab-first-frame": "node scripts/verify-lab-first-frame.cjs",
     "verify:motion": "pnpm --filter @somacue/web verify:motion",
-    "build:body": "node scripts/build-soma-body.mjs",
+    "build:body": "node scripts/athlete-male/build.cjs",
     "postinstall": "prisma generate"
   },
   "devDependencies": {

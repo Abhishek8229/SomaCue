@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { billingFailure, billingJson } from "@/lib/billing/http";
 import { BillingConfigError, razorpayWebhookSecret, verifyWebhookSignature } from "@/lib/billing/razorpay";
-import { grantPurchase, isGrantingEvent } from "@/lib/billing/subscriptions";
+import { grantPurchase, isGrantingEvent, runSerializable } from "@/lib/billing/subscriptions";
 import { prisma } from "@/lib/db/prisma";
 
 const envelopeSchema = z.object({
@@ -57,7 +57,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    // Serializable, so two payments for one user that arrive together stack their days instead of overwriting each other.
+    const result = await runSerializable(prisma, async (tx) => {
       // INSERT ... ON CONFLICT DO NOTHING: a delivery we have already handled adds no row.
       const recorded = await tx.billingEvent.createMany({
         data: [{ eventId, eventType: envelope.event }],

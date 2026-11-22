@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma/client";
 import type { prisma } from "@/lib/db/prisma";
 import { accessEndFor, accessStartFor, isProTier, resolvePlan, type ProTier } from "./plans";
 
@@ -12,6 +13,39 @@ import { accessEndFor, accessStartFor, isProTier, resolvePlan, type ProTier } fr
 
 /** Anything with the two delegates used here: the Prisma client or a transaction. */
 export type BillingDb = Pick<typeof prisma, "subscription" | "proPurchase">;
+
+/** How many times a transaction that lost a serialization race is run again before giving up. */
+export const SERIALIZATION_ATTEMPTS = 6;
+
+/** Prisma's code for "this transaction conflicted with another and was rolled back": safe to run again. */
+export function isSerializationConflict(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2034";
+}
+
+/**
+ * Runs `work` in a Serializable transaction and runs it again if it loses a race with another one.
+ *
+ * Granting days reads the current end of the user's Pro time and writes a new one. Two payments for
+ * the same user that arrive together (two webhooks, or a webhook and the browser's verify call) would
+ * both read the same end and the second write would erase the first one's days. Serializable
+ * isolation makes the database roll one of them back instead, and the retry then reads the other's
+ * result, so every purchased day stacks. Anything that is not a conflict is thrown straight away.
+ */
+export async function runSerializable<T>(
+  client: Pick<typeof prisma, "$transaction">,
+  work: (tx: Prisma.TransactionClient) => Promise<T>,
+  attempts: number = SERIALIZATION_ATTEMPTS,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await client.$transaction(work, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (!isSerializationConflict(error) || attempt >= attempts) throw error;
+      // A short, growing pause with jitter, so two retries do not collide again in step.
+      await new Promise((resolve) => setTimeout(resolve, 5 * 2 ** attempt + Math.random() * 10));
+    }
+  }
+}
 
 /** The webhook events that mean a payment for a subscription went through. */
 export const GRANTING_EVENTS = ["subscription.activated", "subscription.charged"] as const;
@@ -35,7 +69,7 @@ export type GrantInput = {
 };
 
 /**
- * Adds the purchased days to the user's Pro time. Run it inside a transaction.
+ * Adds the purchased days to the user's Pro time. Run it through `runSerializable`.
  *
  * The purchase flips from "created" to "paid" in one conditional UPDATE, so of any number of
  * concurrent or repeated calls for the same payment exactly one adds the days. The days start

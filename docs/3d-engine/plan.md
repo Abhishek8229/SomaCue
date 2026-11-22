@@ -5,7 +5,7 @@ Status: **built** (v1). Sections 1 to 15 are the original spec; "Build status" b
 ## Build status (v1)
 
 **What exists**
-- Body: Quaternius Superhero male (the free pack has no Regular body), built by `pnpm build:body`. See `asset-register.md`.
+- Body: Quaternius Superhero male (the free pack has no Regular body), a CC0 body that has since been replaced by the Character Creator athlete (`pnpm build:body` now runs `scripts/athlete-male/build.cjs`). See `asset-register.md`.
 - Engine, pure TypeScript in `apps/web/lib/kinematics/`:
   - `vocabulary.ts`, `joint-table.ts`: draft ranges with sources, `CLINICAL_RANGES_REVIEWED = false`.
   - `movement-spec.ts`, `timeline.ts`, `postures.ts`, `rig.ts`, `solver.ts`, `engine.ts`.

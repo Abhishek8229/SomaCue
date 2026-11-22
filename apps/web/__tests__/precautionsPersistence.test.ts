@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   upsert: vi.fn(),
   planLookup: vi.fn(),
+  /** an active Pro subscription lets a report be re-run; null is Free */
+  subscription: null as null | { status: string; cancelAtPeriodEnd: boolean; currentPeriodEnd: Date | null },
   logEvent: vi.fn(),
   generateFinalRoutine: vi.fn(),
   existingPlan: false,
@@ -34,7 +36,8 @@ vi.mock("@/lib/db/prisma", () => ({
       }),
     },
     quizAnswer: { upsert: async () => ({}) },
-    clinicalReport: { update: async () => ({}) },
+    clinicalReport: { update: async () => ({}), count: async () => 1 },
+    subscription: { findUnique: async () => mocks.subscription },
     treatmentPlan: { upsert: mocks.upsert, findUnique: mocks.planLookup },
     recoveryEvent: { upsert: mocks.logEvent },
     $transaction: async (operations: Array<Promise<unknown>>) => Promise.all(operations),
@@ -63,6 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.upsert.mockResolvedValue({ id: "plan-1", createdAt: new Date("2026-11-01T08:10:00.000Z") });
   mocks.planLookup.mockResolvedValue(null);
+  mocks.subscription = { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null };
   mocks.logEvent.mockResolvedValue({});
 });
 
@@ -97,6 +101,7 @@ describe("analysis saves the precautions with the plan", () => {
   it("replaces both lists when the analysis is run again", async () => {
     mocks.generateFinalRoutine.mockResolvedValue(ai(["Old one.", "Old two.", "Old three."], ["Old a.", "Old b.", "Old c."]));
     await completeTriageQuiz("report-1", "quiz-1", answers);
+    mocks.planLookup.mockResolvedValue({ routine: ROUTINE }); // the plan now exists: this is a Pro re-run
     mocks.generateFinalRoutine.mockResolvedValue(ai(["New one.", "New two.", "New three."], ["New a.", "New b.", "New c."]));
     await completeTriageQuiz("report-1", "quiz-1", answers);
 
@@ -104,7 +109,8 @@ describe("analysis saves the precautions with the plan", () => {
     expect(update.permanentPrecautions).toEqual(["New one.", "New two.", "New three."]);
     expect(update.dynamicPrecautions.items).toEqual(["New a.", "New b.", "New c."]);
     expect(update.dynamicPrecautions.kind).toBe("initial");
-    expect(update.createdAt).toBeInstanceOf(Date);
+    // a re-run keeps the plan's original creation time, so it cannot restart the free window
+    expect(update).not.toHaveProperty("createdAt");
   });
 
   it("keeps each list to 3 to 5 bullets whatever the AI returns", async () => {

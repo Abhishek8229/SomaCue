@@ -31,20 +31,31 @@ const db = vi.hoisted(() => ({
   sub: null as unknown,
   purchases: [] as unknown[],
   failUpdate: false,
+  /** bumped by every committed transaction, so a transaction can tell it lost a race */
+  version: 0,
+  /** transactions that were rolled back and run again */
+  conflicts: 0,
+  /** how many times in a row the next Serializable transactions must lose, to test giving up */
+  forceConflicts: 0,
+  /** a pause inside a transaction, after it has read, so two of them really overlap */
+  pause: false,
 }));
 
 const sub = () => db.sub as SubRow | null;
 const purchases = () => db.purchases as PurchaseRow[];
 
+type State = { events: Set<string>; sub: unknown; purchases: unknown[] };
+
 vi.mock("@/lib/db/prisma", () => {
-  const client = () => ({
+  // `state` is the committed data for plain calls, or a private copy inside a transaction.
+  const client = (state: State) => ({
     billingEvent: {
       // INSERT ... ON CONFLICT DO NOTHING
       createMany: async ({ data }: { data: Array<{ eventId: string }> }) => {
         let count = 0;
         for (const { eventId } of data) {
-          if (!db.events.has(eventId)) {
-            db.events.add(eventId);
+          if (!state.events.has(eventId)) {
+            state.events.add(eventId);
             count += 1;
           }
         }
@@ -52,24 +63,28 @@ vi.mock("@/lib/db/prisma", () => {
       },
     },
     subscription: {
-      findUnique: async () => db.sub,
+      findUnique: async () => {
+        const row = state.sub;
+        if (db.pause) await new Promise((resolve) => setTimeout(resolve, 15));
+        return row;
+      },
       upsert: async ({ create, update }: { create: Partial<SubRow>; update: Partial<SubRow> }) => {
         if (db.failUpdate) throw new Error("database unavailable");
-        db.sub = db.sub ? { ...(db.sub as SubRow), ...update } : { id: "row-1", ...create };
-        return db.sub;
+        state.sub = state.sub ? { ...(state.sub as SubRow), ...update } : { id: "row-1", ...create };
+        return state.sub;
       },
     },
     proPurchase: {
       findUnique: async ({ where }: { where: { providerSubscriptionId: string } }) =>
-        purchases().find((row) => row.providerSubscriptionId === where.providerSubscriptionId) ?? null,
+        (state.purchases as PurchaseRow[]).find((row) => row.providerSubscriptionId === where.providerSubscriptionId) ?? null,
       updateMany: async ({ where, data }: { where: { providerSubscriptionId: string; status: string }; data: Partial<PurchaseRow> }) => {
-        const row = purchases().find((item) => item.providerSubscriptionId === where.providerSubscriptionId && item.status === where.status);
+        const row = (state.purchases as PurchaseRow[]).find((item) => item.providerSubscriptionId === where.providerSubscriptionId && item.status === where.status);
         if (!row) return { count: 0 };
         Object.assign(row, data);
         return { count: 1 };
       },
       update: async ({ where, data }: { where: { id: string }; data: Partial<PurchaseRow> }) => {
-        const row = purchases().find((item) => item.id === where.id) as PurchaseRow;
+        const row = (state.purchases as PurchaseRow[]).find((item) => item.id === where.id) as PurchaseRow;
         Object.assign(row, data);
         return row;
       },
@@ -77,28 +92,36 @@ vi.mock("@/lib/db/prisma", () => {
   });
   return {
     prisma: {
-      ...client(),
-      // A failed transaction undoes what it wrote, including the event row.
-      $transaction: async (work: (tx: ReturnType<typeof client>) => Promise<unknown>) => {
-        const eventsBefore = [...db.events];
-        const subBefore = db.sub ? { ...(db.sub as SubRow) } : null;
-        const purchasesBefore = purchases().map((row) => ({ ...row }));
-        try {
-          return await work(client());
-        } catch (error) {
-          db.events.clear();
-          for (const id of eventsBefore) db.events.add(id);
-          db.sub = subBefore;
-          db.purchases = purchasesBefore;
-          throw error;
+      ...client(db),
+      // A transaction works on a private copy and commits it whole, like a real database. A failed one is
+      // thrown away. A Serializable one that finds another transaction committed since it started is rolled
+      // back with Prisma's P2034, as Postgres does; any other isolation level silently loses the update.
+      $transaction: async (work: (tx: ReturnType<typeof client>) => Promise<unknown>, options?: { isolationLevel?: string }) => {
+        const startedAt = db.version;
+        const draft: State = {
+          events: new Set(db.events),
+          sub: db.sub ? { ...(db.sub as SubRow) } : null,
+          purchases: purchases().map((row) => ({ ...row })),
+        };
+        const result = await work(client(draft));
+        const lostRace = options?.isolationLevel === "Serializable" && (db.forceConflicts > 0 || db.version !== startedAt);
+        if (lostRace) {
+          if (db.forceConflicts > 0) db.forceConflicts -= 1;
+          db.conflicts += 1;
+          throw Object.assign(new Error("Transaction failed due to a write conflict or a deadlock. Please retry your transaction"), { code: "P2034" });
         }
+        db.events = draft.events;
+        db.sub = draft.sub;
+        db.purchases = draft.purchases;
+        db.version += 1;
+        return result;
       },
     },
   };
 });
-
 import { POST } from "@/app/api/billing/webhook/route";
 import { signWebhookBody } from "@/lib/billing/razorpay";
+import { isSerializationConflict, runSerializable, SERIALIZATION_ATTEMPTS } from "@/lib/billing/subscriptions";
 
 const SECRET = "whsec_test_secret";
 const SUB = "sub_Webhook1";
@@ -148,6 +171,10 @@ beforeEach(() => {
   vi.stubEnv("RAZORPAY_WEBHOOK_SECRET", SECRET);
   db.events.clear();
   db.failUpdate = false;
+  db.version = 0;
+  db.conflicts = 0;
+  db.forceConflicts = 0;
+  db.pause = false;
   db.sub = null;
   db.purchases = [purchase()];
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -275,5 +302,103 @@ describe("granting days from a payment", () => {
     const retry = await deliver("subscription.activated", { eventId: "evt_retry" });
     expect((await retry.json()).result).toBe("granted");
     expect(sub()?.plan).toBe("pro");
+  });
+});
+
+describe("two payments for the same user at the same time", () => {
+  const SECOND = "sub_Second";
+  const second = () => purchase({ id: "purchase-2", providerSubscriptionId: SECOND, tier: "2m", days: 60 });
+
+  it("stacks every purchased day instead of one payment erasing the other", async () => {
+    db.purchases = [purchase(), second()];
+    db.pause = true; // both transactions read the user's Pro time before either one writes it
+
+    const [first, other] = await Promise.all([
+      deliver("subscription.activated", { eventId: "evt_one", subscriptionId: SUB }),
+      deliver("subscription.activated", { eventId: "evt_two", subscriptionId: SECOND }),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(other.status).toBe(200);
+    expect(db.conflicts).toBeGreaterThanOrEqual(1); // one of them lost the race and ran again
+    expect(purchases().map((row) => row.status)).toEqual(["paid", "paid"]);
+    // 30 + 60 days, not just the longer of the two
+    expect(sub()?.currentPeriodEnd).toEqual(new Date(NOW.getTime() + 90 * DAY));
+    // the second grant starts exactly where the first one ended
+    const [early, late] = [...purchases()].sort((a, b) => (a.accessStart as Date).getTime() - (b.accessStart as Date).getTime());
+    expect(early.accessStart).toEqual(NOW);
+    expect(late.accessStart).toEqual(early.accessEnd);
+    expect(db.events.has("evt_one") && db.events.has("evt_two")).toBe(true);
+  });
+
+  it("stacks three at once", async () => {
+    db.purchases = [purchase(), second(), purchase({ id: "purchase-3", providerSubscriptionId: "sub_Third", tier: "3m", days: 90 })];
+    db.pause = true;
+    const responses = await Promise.all([
+      deliver("subscription.charged", { eventId: "evt_a", subscriptionId: SUB }),
+      deliver("subscription.charged", { eventId: "evt_b", subscriptionId: SECOND }),
+      deliver("subscription.charged", { eventId: "evt_c", subscriptionId: "sub_Third" }),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(sub()?.currentPeriodEnd).toEqual(new Date(NOW.getTime() + 180 * DAY));
+  });
+
+  it("still adds the days once when the same payment is delivered twice at the same time", async () => {
+    db.pause = true;
+    await Promise.all([
+      deliver("subscription.activated", { eventId: "evt_x" }),
+      deliver("subscription.charged", { eventId: "evt_y" }),
+    ]);
+    expect(sub()?.currentPeriodEnd).toEqual(new Date(NOW.getTime() + 30 * DAY));
+    expect(purchases()[0].status).toBe("paid");
+  });
+
+  it("answers 500 for Razorpay to retry if it keeps losing the race, keeping nothing", async () => {
+    db.forceConflicts = 1000;
+    const response = await deliver("subscription.activated", { eventId: "evt_busy" });
+    expect(response.status).toBe(500);
+    expect(db.conflicts).toBe(SERIALIZATION_ATTEMPTS);
+    expect(db.events.has("evt_busy")).toBe(false);
+    expect(purchases()[0].status).toBe("created");
+    expect(sub()).toBeNull();
+
+    db.forceConflicts = 0;
+    const retry = await deliver("subscription.activated", { eventId: "evt_busy" });
+    expect((await retry.json()).result).toBe("granted");
+    expect(sub()?.currentPeriodEnd).toEqual(new Date(NOW.getTime() + 30 * DAY));
+  });
+});
+
+describe("runSerializable", () => {
+  const conflict = () => Object.assign(new Error("write conflict"), { code: "P2034" });
+
+  it("recognises only Prisma's serialization conflict", () => {
+    expect(isSerializationConflict(conflict())).toBe(true);
+    expect(isSerializationConflict(Object.assign(new Error("x"), { code: "P2002" }))).toBe(false);
+    expect(isSerializationConflict(new Error("plain"))).toBe(false);
+    expect(isSerializationConflict(null)).toBe(false);
+    expect(isSerializationConflict("P2034")).toBe(false);
+  });
+
+  it("asks for Serializable isolation and returns the result", async () => {
+    const transaction = vi.fn<(work: (tx: never) => Promise<string>, options?: { isolationLevel?: string }) => Promise<string>>(async (work) => work({} as never));
+    await expect(runSerializable({ $transaction: transaction } as never, async () => "done")).resolves.toBe("done");
+    expect(transaction.mock.calls[0][1]).toEqual({ isolationLevel: "Serializable" });
+  });
+
+  it("runs again after a conflict and stops after the last allowed attempt", async () => {
+    const flaky = vi.fn().mockRejectedValueOnce(conflict()).mockRejectedValueOnce(conflict()).mockResolvedValue("ok");
+    await expect(runSerializable({ $transaction: flaky } as never, async () => "ok")).resolves.toBe("ok");
+    expect(flaky).toHaveBeenCalledTimes(3);
+
+    const always = vi.fn().mockRejectedValue(conflict());
+    await expect(runSerializable({ $transaction: always } as never, async () => "ok", 3)).rejects.toMatchObject({ code: "P2034" });
+    expect(always).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry any other error", async () => {
+    const broken = vi.fn().mockRejectedValue(new Error("database unavailable"));
+    await expect(runSerializable({ $transaction: broken } as never, async () => "ok")).rejects.toThrow("database unavailable");
+    expect(broken).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,7 +3,13 @@
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useCallback, useState, useSyncExternalStore } from "react";
-import { Bar, Button, Check, Segmented, Stage, Window, type Act } from "./kit";
+// Deep imports on purpose: only the parts this stage uses (and what they need) live in ./kit.
+import type { Act } from "./kit/act";
+import { Button } from "./kit/controls/Button";
+import { Segmented } from "./kit/controls/Segmented";
+import { Check } from "./kit/parts/Check";
+import { Stage } from "./kit/stage";
+import { Bar, Window } from "./kit/window";
 import { ConditionCard } from "@/components/workspace/ConditionCard";
 import { SetRepCounter } from "@/components/workspace/SetRepCounter";
 import type { DetectedCondition } from "@/lib/clinical/assessment";

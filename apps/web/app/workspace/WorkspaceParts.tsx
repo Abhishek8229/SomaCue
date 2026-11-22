@@ -46,6 +46,9 @@ function Icon({ children, size = 18 }: { children: ReactNode; size?: number }) {
   );
 }
 
+/** The sample text the symptoms box starts with. Dictation replaces it instead of adding to it. */
+const DEFAULT_SYMPTOMS = "Pain and stiffness around the right knee after long walks.";
+
 export type TriageReadyResult = {
   reportId: string;
   /** null when the case was escalated for in-person care and no quiz was made. */
@@ -242,9 +245,7 @@ export function SidebarIntake({
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
-  const [symptoms, setSymptoms] = useState(
-    "Pain and stiffness around the right knee after long walks.",
-  );
+  const [symptoms, setSymptoms] = useState(DEFAULT_SYMPTOMS);
   const previewUrls = useRef(new Set<string>());
   const {
     isListening: isDictating,
@@ -252,7 +253,20 @@ export function SidebarIntake({
     startListening,
     stopListening,
   } = useDictation();
-  const syncedTranscriptLength = useRef(0);
+  // How much of the dictation transcript is already in the symptoms. It only ever grows.
+  const [syncedLength, setSyncedLength] = useState(0);
+  if (transcript.length > syncedLength) {
+    // Newly recognised speech goes onto the end of whatever is typed now, so typing is never overwritten
+    // and nothing is added twice. The untouched sample text is a placeholder, so speech replaces it.
+    const spoken = transcript.slice(syncedLength).trim();
+    setSyncedLength(transcript.length);
+    if (spoken) {
+      setSymptoms((current) => {
+        const typed = current.trim();
+        return typed === "" || typed === DEFAULT_SYMPTOMS ? spoken : `${typed} ${spoken}`;
+      });
+    }
+  }
   const scanFiles = selectedFiles.filter((item) => item.category === "scan");
   const prescriptionFiles = selectedFiles.filter((item) => item.category === "prescription");
   // A prescription that failed to upload does not count; the patient must remove it anyway.
@@ -268,7 +282,7 @@ export function SidebarIntake({
     setSelectedFiles([]);
     setUploadNotice(null);
     setDisclaimerAccepted(false);
-    setSymptoms("Pain and stiffness around the right knee after long walks.");
+    setSymptoms(DEFAULT_SYMPTOMS);
     onRerunAnalysis();
   };
 
@@ -400,7 +414,6 @@ export function SidebarIntake({
 
   const updateSymptoms = (value: string) => {
     setSymptoms(value);
-    syncedTranscriptLength.current = transcript.length;
   };
 
   return (

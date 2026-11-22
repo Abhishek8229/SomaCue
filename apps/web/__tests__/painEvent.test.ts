@@ -101,6 +101,9 @@ vi.mock("@/lib/db/prisma", () => {
 import { reportPainEvent, reschedulePainEvent } from "@/actions/painEvent";
 import { resetDailyProgress, submitDailyFeedback, toggleExerciseCompletion } from "@/actions/dailyProgress";
 import { toDateKey } from "@/lib/progress/dailyProgress";
+import { loadedRegions, stripFlaggedMovements } from "@/lib/kinematics/plan-repair";
+import { findReferenceExercise } from "@/lib/kinematics/reference-exercises";
+import type { Region } from "@/lib/kinematics/vocabulary";
 
 const today = toDateKey(new Date());
 const report = {
@@ -349,5 +352,61 @@ describe("Plan days: Free covers Week 1 (Days 1 to 7), Pro the whole plan", () =
     created.setDate(created.getDate() - 9);
     (db.report as { treatmentPlan: { createdAt: Date } }).treatmentPlan.createdAt = created;
     expect(await tick()).toMatchObject({ success: false, error: "PRO_REQUIRED" });
+  });
+});
+
+describe("Pain Override veto on alternating exercises", () => {
+  const stepFor = (name: string, alternateSides?: boolean) => {
+    const spec = structuredClone(findReferenceExercise(name)!.spec);
+    if (alternateSides !== undefined) spec.alternateSides = alternateSides;
+    return { exerciseName: name, animationTriggerId: name.toLowerCase().replaceAll(" ", "_"), durationSeconds: 30, voiceCue: "Go", movement: spec };
+  };
+  const scheduleWith = (...steps: ReturnType<typeof stepFor>[]) => ({
+    horizonDays: 2,
+    days: [
+      { dayOffset: 0, status: "active" as const, focus: "Today", tagline: "Go", steps: [] },
+      { dayOffset: 1, status: "upcoming" as const, focus: "Next", tagline: "Go", steps },
+    ],
+  });
+  const tomorrowSteps = (regions: Region[], ...steps: ReturnType<typeof stepFor>[]) =>
+    stripFlaggedMovements(scheduleWith(...steps), { exerciseNames: [], regions }).days.find((day) => day.dayOffset === 1)?.steps ?? [];
+
+  it("loads the mirrored side of every left or right region when the exercise alternates", () => {
+    const alternating = stepFor("Seated Knee Extension");
+    expect(alternating.movement.alternateSides).toBe(true);
+    expect(alternating.movement.targetRegions).toEqual(["knee_left"]);
+    expect(loadedRegions(alternating.movement)).toEqual(expect.arrayContaining(["knee_left", "knee_right"]));
+  });
+
+  it("vetoes an alternating exercise when the right side hurts, even though it is tagged left", () => {
+    expect(tomorrowSteps(["knee_right"], stepFor("Seated Knee Extension"))).toHaveLength(0);
+  });
+
+  it("vetoes it when the left side hurts too", () => {
+    expect(tomorrowSteps(["knee_left"], stepFor("Seated Knee Extension"))).toHaveLength(0);
+  });
+
+  it("mirrors a mixed-side exercise: Bird Dog loads both shoulders and both hips", () => {
+    for (const region of ["shoulder_left", "shoulder_right", "hip_left", "hip_right"] as Region[]) {
+      expect(tomorrowSteps([region], stepFor("Bird Dog"))).toHaveLength(0);
+    }
+  });
+
+  it("does not mirror an exercise that does not alternate: one-sided stays one-sided", () => {
+    const oneSided = stepFor("Seated Knee Extension", false);
+    expect(loadedRegions(oneSided.movement)).not.toContain("knee_right");
+    expect(tomorrowSteps(["knee_right"], oneSided)).toHaveLength(1);
+    expect(tomorrowSteps(["knee_left"], oneSided)).toHaveLength(0);
+  });
+
+  it("keeps exercises that load neither side of the painful region", () => {
+    expect(tomorrowSteps(["knee_right"], stepFor("Seated Chin Tuck"))).toHaveLength(1);
+  });
+
+  it("never touches today's session", () => {
+    const schedule = scheduleWith(stepFor("Glute Bridge"));
+    schedule.days[0].steps = [stepFor("Seated Knee Extension")] as never;
+    const result = stripFlaggedMovements(schedule, { exerciseNames: [], regions: ["knee_right"] });
+    expect(result.days[0].steps).toHaveLength(1);
   });
 });

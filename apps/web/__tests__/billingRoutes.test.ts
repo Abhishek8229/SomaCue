@@ -30,6 +30,8 @@ type PurchaseRow = {
 };
 
 const db = vi.hoisted(() => ({
+  /** the isolation level each transaction was opened with */
+  transactionIsolation: [] as Array<string | null>,
   user: { id: "user-1", name: "Asha", email: "asha@example.com" } as { id: string; name: string; email: string } | null,
   sub: null as unknown,
   purchases: [] as unknown[],
@@ -86,7 +88,15 @@ vi.mock("@/lib/db/prisma", () => {
     clinicalReport: { count: async () => db.analyses },
     chatMessage: { count: async () => db.messages },
   });
-  return { prisma: { ...client(), $transaction: async (work: (tx: ReturnType<typeof client>) => Promise<unknown>) => work(client()) } };
+  return {
+    prisma: {
+      ...client(),
+      $transaction: async (work: (tx: ReturnType<typeof client>) => Promise<unknown>, options?: { isolationLevel?: string }) => {
+        db.transactionIsolation.push(options?.isolationLevel ?? null);
+        return work(client());
+      },
+    },
+  };
 });
 
 import { GET as getStatus } from "@/app/api/billing/status/route";
@@ -391,6 +401,12 @@ describe("POST /api/billing/verify", () => {
   it("rejects a malformed body", async () => {
     expect((await verify(json({ razorpay_payment_id: PAY }))).status).toBe(400);
     expect((await verify(new Request("http://localhost/api", { method: "POST", body: "nope" }))).status).toBe(400);
+  });
+
+  it("grants the days inside a Serializable transaction, so it stacks with a webhook that arrives together", async () => {
+    db.transactionIsolation.length = 0;
+    await verify(json(good()));
+    expect(db.transactionIsolation).toEqual(["Serializable"]);
   });
 
   it("grants exactly 30 days for the 1 month tier, from now", async () => {

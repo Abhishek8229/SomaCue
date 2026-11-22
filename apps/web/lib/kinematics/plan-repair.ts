@@ -1,5 +1,5 @@
 import type { ScheduleWithSteps, StoredTreatmentPlan } from "@/lib/progress/dailyProgress";
-import { normalizeSpec, parseMovementSpec, type MovementSpec } from "./movement-spec";
+import { mirrorRegions, normalizeSpec, parseMovementSpec, type MovementSpec } from "./movement-spec";
 import { findReferenceExercise } from "./reference-exercises";
 import type { BodyRig } from "./rig";
 import { validateMovement } from "./validate";
@@ -120,13 +120,21 @@ function logRepairs(log: RepairLog[]) {
   if (changed.length) console.info("[SomaCue motion] Movement repairs.", changed);
 }
 
-function stepRegions(step: StepLike): Region[] {
-  const spec = parseMovementSpec(step.movement);
-  if (!spec) return [];
-  return [
+/**
+ * Every region a movement loads. An alternating exercise mirrors left and right on every other rep
+ * (see `timeline.ts`), so a region tagged `knee_left` is also loaded as `knee_right`. Both sides count.
+ */
+export function loadedRegions(spec: MovementSpec): Region[] {
+  const regions = [
     ...spec.targetRegions,
     ...spec.movements.flatMap((entry) => regionsForSegment(entry.segment, entry.side)),
   ];
+  return spec.alternateSides ? [...new Set([...regions, ...mirrorRegions(regions, true)])] : regions;
+}
+
+function stepRegions(step: StepLike): Region[] {
+  const spec = parseMovementSpec(step.movement);
+  return spec ? loadedRegions(spec) : [];
 }
 
 /**

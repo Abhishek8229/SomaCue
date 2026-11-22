@@ -27,7 +27,7 @@ import {
 import { storeUpload } from "@/lib/intake/storage";
 import { validateUploadFile } from "@/lib/intake/uploadGuard";
 import { repairPlan } from "@/lib/kinematics/plan-repair";
-import { recordAnalysis, recordPlan, reportHasPlan } from "@/lib/recovery/server";
+import { recordAnalysis, recordPlan } from "@/lib/recovery/server";
 
 function readUploadUrls(formData: FormData, field: string) {
   const urls = [
@@ -213,6 +213,21 @@ export async function completeTriageQuiz(
     throw new Error("The triage quiz could not be found.");
   }
 
+  // A report that already has a plan is being replayed. Making a plan again is a re-analysis, so it needs
+  // the same entitlement as one (Free gets a single analysis). This is checked on the server, before any
+  // answers are saved or the AI is called, because a server action can be called directly. The lookup is
+  // not wrapped: if it fails, the replay is refused rather than let through.
+  const existingPlan = await prisma.treatmentPlan.findUnique({
+    where: { clinicalReportId: reportId },
+    select: { routine: true },
+  });
+  if (existingPlan) {
+    const blocked = await checkAnalysisAllowed(user.id);
+    if (blocked) {
+      return { success: false, error: blocked.error, feature: blocked.feature } as const;
+    }
+  }
+
   const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
   const questionIds = new Set(
     questions.flatMap((question) => {
@@ -311,20 +326,23 @@ export async function completeTriageQuiz(
   // The precautions came with the plan in the same AI response. They are saved on the plan row, so
   // /workspace loads them straight from the database. A re-run replaces both lists with the new ones.
   const precautions = initialPrecautions(routineResult.precautions);
-  const isRerun = await reportHasPlan(reportId);
+  const isRerun = existingPlan !== null;
+  // A legitimate re-run of the same report keeps the original Day 1: the plan keeps its creation time and
+  // start date, so it cannot restart the free Days 1 to 7 or the 7-day Companion window.
+  const previousStart = (existingPlan?.routine as { startDateKey?: unknown } | null | undefined)?.startDateKey;
+  const savedRoutine = typeof previousStart === "string" ? { ...routine, startDateKey: previousStart } : routine;
   const treatmentPlan = await prisma.treatmentPlan.upsert({
     where: { clinicalReportId: reportId },
     create: {
       clinicalReportId: reportId,
-      routine,
+      routine: savedRoutine,
       permanentPrecautions: precautions.permanent,
       dynamicPrecautions: precautions.dynamic,
     },
     update: {
-      routine,
+      routine: savedRoutine,
       permanentPrecautions: precautions.permanent,
       dynamicPrecautions: precautions.dynamic,
-      createdAt: new Date(),
     },
   });
 
@@ -341,7 +359,7 @@ export async function completeTriageQuiz(
   return {
     success: true,
     treatmentPlanId: treatmentPlan.id,
-    routine,
+    routine: savedRoutine,
     precautions,
     escalation: null,
   } as const;

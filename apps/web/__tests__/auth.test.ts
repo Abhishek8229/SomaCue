@@ -9,22 +9,30 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-import { decryptSession, encryptSession } from "@/lib/auth/session";
+import { signSession, verifySession } from "@/lib/auth/jwt";
+import * as session from "@/lib/auth/session";
 
 describe("auth session engine", () => {
-  it("encrypts and decrypts a session payload", async () => {
+  it("signs and verifies a session payload", async () => {
     const user = {
       id: "user-1",
       email: "patient@somacue.internal",
       name: "Default Patient",
       role: "patient" as const,
     };
-    const token = await encryptSession(user);
+    const token = await signSession(user);
     expect(typeof token).toBe("string");
-    await expect(decryptSession(token)).resolves.toEqual(user);
+    await expect(verifySession(token)).resolves.toEqual(user);
   });
 
   it("returns null for a malformed token", async () => {
-    await expect(decryptSession("not-a-jwt")).resolves.toBeNull();
+    await expect(verifySession("not-a-jwt")).resolves.toBeNull();
+  });
+
+  it("has no pass-through encrypt or decrypt wrappers: the session helpers sign and verify directly", () => {
+    expect(session).not.toHaveProperty("encryptSession");
+    expect(session).not.toHaveProperty("decryptSession");
+    expect(typeof session.createSessionCookie).toBe("function");
+    expect(typeof session.getCurrentUser).toBe("function");
   });
 });

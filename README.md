@@ -152,7 +152,7 @@ chronological Recovery Timeline records the whole journey for sharing with a doc
 | `/dashboard` | Signed in | Overview, records, history and the Recovery Timeline |
 | `/3d-lab` | Public, `noindex` | Experimental anatomy and motion compatibility lab |
 | `/api/chat` | Signed in | Rehab Companion (stream, history, clear) |
-| `/api/upload`, `/api/extract` | Signed in | File upload and report extraction |
+| `/api/upload` | Signed in | Patient file upload |
 | `/api/recovery/export` | Signed in | Printable Recovery Timeline report |
 | `/api/billing/*` | Signed in / webhook | Checkout, verification, status and the Razorpay webhook |
 | `/api/auth/*` | Public | Google sign-in start and callback, logout |
@@ -237,7 +237,7 @@ pnpm build            # production build
 | `pnpm verify:motion` | Solves every reference exercise on the real rig and checks slip, self-overlap and floor contact |
 | `pnpm db:migrate` | Create and apply a new migration in development (`prisma migrate dev`) |
 | `pnpm db:deploy` | Apply existing migrations (`prisma migrate deploy`) |
-| `pnpm build:body` | Rebuild the stage body from a source pack (see [`docs/3d-engine`](docs/3d-engine/plan.md)) |
+| `pnpm build:body <export dir>` | Rebuild the athlete body from a Character Creator 4 export with `scripts/athlete-male/build.cjs` (run `npm install` in that folder first; see [`docs/3d-engine`](docs/3d-engine/asset-register.md)) |
 
 The tests cover the guardrails and escalation rules, plan repair and the kinematics engine, billing limits
 and webhooks, the Companion route, the precautions rules, the Recovery Timeline and its export, and the main
@@ -250,12 +250,9 @@ The MIT [LICENSE](LICENSE) covers the **source code** only. Every model keeps th
 | Asset | Used for | Source | Licence |
 | --- | --- | --- | --- |
 | `public/models/athlete-male.glb` and `athlete-male-lite.glb` | The body on the workspace stage | Character Creator 4 export of a Reallusion realistic human base mesh | **Not verified**, see below |
-| `public/assets/stage/soma-body.glb` | Previous stage body, no longer loaded | Quaternius, *Universal Base Characters* | CC0 1.0 |
 | `public/assets/lab/human-atlas/` | Anatomy in `/3d-lab` | BodyParts3D (DBCLS), the Human Reference Atlas female organ set, and lower-limb muscle geometry from Andreassen et al. (2023) | CC BY 4.0, attribution in `ATTRIBUTION.md` there |
 | `public/assets/lab/innerscene/` | Rig in `/3d-lab` | Innerscene Corp, adapted from MakeHuman assets | CC0 |
 | `public/assets/lab/mesh2motion/` | Jumping-jacks clip in `/3d-lab` | Mesh2Motion | CC0 |
-| `public/assets/movement/desk-break-standing-cat-cow.glb` | Standing cat-cow clip | Shlomy Reshef, *Desk Break* | MIT, notice alongside |
-| `public/assets/anatomy/nih-3dpx-000379-l4.glb` | L4 vertebra | NIH 3D `3DPX-000379` | Public domain |
 
 > **Check this before you fork, deploy or redistribute.** The terms of the Character Creator pack behind
 > `athlete-male.glb` could not be confirmed when it was added, so it may not be redistributable. It is the

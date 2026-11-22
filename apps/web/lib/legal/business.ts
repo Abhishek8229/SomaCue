@@ -4,7 +4,7 @@
  * Razorpay's live KYC checks that these pages show real business details, so they are
  * read from the environment and never invented here. Anything left empty is shown as
  * "not published yet" rather than filled in with a made-up value. Set them in
- * apps/web/.env (see .env.example) before applying for live payments.
+ * apps/web/.env (see the root .env.example) before applying for live payments.
  */
 
 const clean = (value: string | undefined) => {

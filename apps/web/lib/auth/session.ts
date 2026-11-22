@@ -15,17 +15,9 @@ export type SessionUser = {
   role: UserRole;
 };
 
-export function encryptSession(payload: SessionUser): Promise<string> {
-  return signSession(payload);
-}
-
-export function decryptSession(token: string): Promise<SessionUser | null> {
-  return verifySession(token);
-}
-
 export async function createSessionCookie(user: SessionUser): Promise<void> {
   const store = await cookies();
-  const token = await encryptSession(user);
+  const token = await signSession(user);
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -44,5 +36,5 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  return decryptSession(token);
+  return verifySession(token);
 }

@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getBillingStatus } from "@/lib/billing/entitlements";
 import { billingFailure, billingJson, readJsonBody } from "@/lib/billing/http";
 import { fetchSubscription, verifyCheckoutSignature } from "@/lib/billing/razorpay";
-import { grantPurchase } from "@/lib/billing/subscriptions";
+import { grantPurchase, runSerializable } from "@/lib/billing/subscriptions";
 import { prisma } from "@/lib/db/prisma";
 
 const bodySchema = z.object({
@@ -63,7 +63,8 @@ export async function POST(request: Request) {
 
     // The signature proves the payment went through, so the days are added even in the
     // moment before Razorpay's own status catches up.
-    await prisma.$transaction((tx) =>
+    // Serializable, so a payment that arrives together with a webhook for the same user stacks its days.
+    await runSerializable(prisma, (tx) =>
       grantPurchase(tx, {
         providerSubscriptionId: subscriptionId,
         providerPaymentId: paymentId,

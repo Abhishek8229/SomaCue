@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { MessageCircle, Send, Trash2, X } from "lucide-react";
 import type { CompanionUsage } from "@/lib/billing/plans";
+import { screenRedFlags } from "@/lib/clinical/assessment";
 
 const MAX_CHARS = 500;
 
@@ -213,7 +214,9 @@ export function RehabChatDrawer({ reportId, quickPrompts, onUpgrade }: Props) {
     const text = raw.replace(/\s+/g, " ").trim();
     if (!text || sending || text.length > MAX_CHARS) return;
     // The free messages are used up or the 7 days are over: offer Pro now instead of sending a request that will be refused.
-    if (plan === "free" && (limit === "total" || limit === "window_ended")) {
+    // A message that describes warning signs is the exception. It always goes to the server, which answers it
+    // with urgent-care guidance without counting it, so safety advice is never held behind an upgrade prompt.
+    if (plan === "free" && (limit === "total" || limit === "window_ended") && screenRedFlags(text).length === 0) {
       onUpgrade?.();
       return;
     }

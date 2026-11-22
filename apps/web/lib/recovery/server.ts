@@ -82,15 +82,6 @@ export async function recordAnalysis(
   }
 }
 
-/** True when the report already has a saved plan, so saving another one is a re-run. Never throws. */
-export async function reportHasPlan(reportId: string): Promise<boolean> {
-  try {
-    return (await prisma.treatmentPlan.findUnique({ where: { clinicalReportId: reportId }, select: { id: true } })) !== null;
-  } catch {
-    return false;
-  }
-}
-
 export async function recordPlan(
   patientId: string,
   input: { reportId: string; createdAt: Date; plan: Pick<StoredTreatmentPlan, "durationMonths" | "phases" | "steps">; rerun: boolean },
