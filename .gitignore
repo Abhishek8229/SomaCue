@@ -17,8 +17,11 @@ apps/web/public/models/*
 .tmp-*/
 apps/web/.hallmark/
 
-# Local AI-assistant skill installs and settings
+# Local AI-assistant tooling: skill installs, settings and agent folders stay on the developer's machine
 .agents/
 .claude/
+.cursor/
+.devin/
+.hallmark/
 .kiro/
 skills-lock.json
