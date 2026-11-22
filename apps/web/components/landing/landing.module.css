@@ -1,0 +1,368 @@
+/* Hallmark · shape: product stage · genre: modern-minimal · theme: custom · job: sign up · idea: "A patient's intake desk, read like a case file" · vibe: "clinical bench, dark emerald, quiet instrument"
+ * paper: oklch(9.2% 0.014 198) · accent: oklch(84.5% 0.143 165) · display: Rethink Sans · body: Hanken Grotesk · hero: headline, one sentence and the scripted intake stage · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4 · weakest: V, one dark ground end to end keeps the hand-off to /workspace seamless */
+/* Hallmark · waive 75 · the 8 to 11px strings belong to the Detected condition card and the set and rep counter, the product's own components shown at their real size in the hero and triage demos · they are the workspace picture, page prose is 16px */
+/* Hallmark · waive 44c · the workspace mock continues below the first screen while the headline, sentence and Start free intake action sit above it · the mock is the hero visual and a taller stage reads better */
+/* Hallmark · waive 39b · the 29px Play, Pause and 0.5x buttons are drawn by the stageshow kit inside the hero workspace mock · they are part of the picture, every real page button stands 44px or taller */
+
+.page {
+  --l-ground: var(--workspace-canvas);
+  --l-panel: var(--workspace-panel);
+  --l-raised: var(--workspace-panel-raised);
+  --l-well: var(--workspace-well);
+  --l-rule: var(--workspace-rule);
+  --l-rule-strong: var(--workspace-rule-strong);
+  --l-ink: var(--stage-ink);
+  --l-ink-2: var(--stage-ink-2);
+  --l-muted: var(--stage-muted);
+  --l-signal: var(--landing-signal);
+  --l-signal-ink: var(--landing-signal-ink);
+  --l-signal-hover: var(--landing-signal-hover);
+  --l-signal-soft: color-mix(in oklab, var(--l-signal) 12%, transparent);
+  --l-accent: var(--stage-accent);
+  --l-alert: var(--stage-error);
+  --l-alert-soft: color-mix(in oklab, var(--stage-error) 14%, transparent);
+  --l-amber: var(--workspace-signal);
+  --l-measure: 1360px;
+
+  min-height: 100dvh;
+  background: var(--l-ground);
+  color: var(--l-ink);
+  font-family: var(--font-body);
+}
+
+:global(html):has(.page) {
+  scroll-behavior: smooth;
+  scroll-padding-top: 112px;
+  background: var(--workspace-canvas);
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--l-measure);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* Buttons and links */
+.btnSolid {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 var(--space-lg);
+  border: 1px solid var(--l-signal);
+  border-radius: var(--radius-input);
+  background: var(--l-signal);
+  color: var(--l-signal-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.btnSolid:hover:not(:disabled) {
+  border-color: var(--l-signal-hover);
+  background: var(--l-signal-hover);
+}
+
+.btnSolid:active:not(:disabled) {
+  translate: 0 1px;
+}
+
+.btnSolid:focus-visible,
+.textLink:focus-visible,
+.anchor:focus-visible,
+.brand:focus-visible {
+  outline: 2px solid var(--stage-focus);
+  outline-offset: 3px;
+}
+
+.btnSolid:disabled {
+  border-color: var(--l-rule-strong);
+  background: var(--l-raised);
+  color: var(--l-muted);
+  cursor: not-allowed;
+}
+
+.textLink {
+  color: var(--l-ink);
+  font-size: var(--text-md);
+  text-decoration: underline;
+  text-decoration-color: var(--l-rule-strong);
+  text-underline-offset: 0.3em;
+  transition: text-decoration-color var(--dur-micro) var(--ease-out);
+}
+
+.textLink:hover {
+  text-decoration-color: var(--l-signal);
+}
+
+/* Navigation */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky-nav);
+  border-bottom: 1px solid var(--l-rule);
+  background: color-mix(in oklab, var(--l-ground) 88%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+.navInner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-lg);
+  min-height: 64px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--l-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  text-decoration: none;
+}
+
+.brandMark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--l-signal);
+  color: var(--l-signal-ink);
+  font-size: var(--text-ui);
+  font-weight: 700;
+}
+
+.anchors {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-lg);
+}
+
+.anchor {
+  color: var(--l-ink-2);
+  font-size: var(--text-ui);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.anchor:hover {
+  color: var(--l-signal);
+}
+
+/* The Pricing link: soft emerald text in a faint tinted pill, so it reads as a destination without shouting. */
+.anchorHighlight {
+  padding: 4px var(--space-sm);
+  border: 1px solid color-mix(in oklab, var(--l-signal) 35%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--l-signal-soft);
+  color: var(--l-signal);
+}
+
+.anchorHighlight:hover {
+  border-color: var(--l-signal);
+  background: color-mix(in oklab, var(--l-signal) 20%, transparent);
+}
+
+.navActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.navActions .btnSolid {
+  min-height: 40px;
+  padding-inline: var(--space-md);
+  font-size: var(--text-ui);
+}
+
+/* Hero */
+.hero {
+  padding-block: var(--space-xl) var(--space-2xl);
+}
+
+.heroHead {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+  gap: var(--space-xl);
+  align-items: end;
+}
+
+.heroSide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  min-width: 0;
+}
+
+.h1 {
+  font-size: clamp(2.75rem, 5.6vw, 5.5rem);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: var(--tracking-display);
+}
+.heroLead {
+  max-width: 34ch;
+  color: var(--l-ink-2);
+  font-size: var(--text-xl);
+  line-height: 1.45;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.heroStage {
+  min-width: 0;
+  max-width: 1060px;
+  margin: var(--space-xl) 0 0 auto;
+}
+
+.notice {
+  width: min(100% - 2 * var(--gutter), var(--l-measure) - 2 * var(--gutter));
+  margin: 0 auto;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--l-rule);
+  border-bottom: 1px solid var(--l-rule);
+  color: var(--l-ink-2);
+  font-size: var(--text-ui);
+  text-align: left;
+}
+
+/* Closing */
+.closing {
+  padding-block: var(--section-gap) var(--section-gap-s);
+  border-top: 1px solid var(--l-rule);
+}
+
+.closingTitle {
+  max-width: 14ch;
+  font-size: clamp(2.5rem, 7vw, 6.5rem);
+  font-weight: 600;
+  line-height: 0.96;
+  letter-spacing: var(--tracking-display);
+}
+
+.closingActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-lg);
+  margin-top: var(--space-xl);
+}
+
+.closingNote {
+  max-width: 62ch;
+  margin-top: var(--space-xl);
+  color: var(--l-muted);
+  font-size: var(--text-md);
+}
+
+/* Footer */
+.footer {
+  border-top: 1px solid var(--l-rule);
+  background: var(--l-panel);
+}
+
+.footerInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: var(--space-xl);
+  padding-block: var(--space-xl);
+}
+
+.footerNote {
+  margin-top: var(--space-xs);
+  color: var(--l-muted);
+  font-size: var(--text-ui);
+}
+
+.footerLinks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.footerLinks a {
+  color: var(--l-ink-2);
+  font-size: var(--text-ui);
+  text-decoration: none;
+}
+
+.footerLinks a:hover {
+  color: var(--l-signal);
+}
+
+.footerLinks a:focus-visible {
+  outline: 2px solid var(--stage-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 64rem) {
+  .heroHead {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-lg);
+  }
+
+  .hero {
+    padding-block: var(--space-lg) var(--space-xl);
+  }
+
+  .navInner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-xs) var(--space-md);
+    padding-block: var(--space-xs);
+  }
+
+  .anchors {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: var(--space-xs);
+  }
+}
+
+@media (max-width: 40rem) {
+  .navActions {
+    gap: var(--space-sm);
+  }
+
+  .navActions .btnSolid {
+    padding-inline: var(--space-sm);
+  }
+
+  .heroLead {
+    font-size: var(--text-lg);
+  }
+
+  .footerInner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-lg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(html):has(.page) {
+    scroll-behavior: auto;
+  }
+
+  .btnSolid:active:not(:disabled) {
+    translate: none;
+  }
+}

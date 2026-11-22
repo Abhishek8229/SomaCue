@@ -1,0 +1,145 @@
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  min-height: 64px;
+  padding-inline: var(--space-xl);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-paper);
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-xl);
+  letter-spacing: -0.025em;
+  color: var(--color-ink);
+  line-height: 1;
+}
+
+.context {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.assetButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 40px;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--color-ink-2);
+  font-size: var(--text-ui);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.assetButton:hover {
+  color: var(--color-ink);
+  background: var(--color-paper-2);
+  border-color: var(--color-rule);
+}
+
+.assetButton:active {
+  transform: translateY(1px);
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-rule);
+}
+
+.themeButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--color-ink-2);
+  cursor: pointer;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.themeButton:hover {
+  color: var(--color-ink);
+  background: var(--color-paper-2);
+  border-color: var(--color-rule);
+}
+
+.themeButton:active {
+  transform: translateY(1px);
+}
+
+.themeButton::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+}
+
+.iconSun {
+  display: none;
+}
+
+.iconMoon {
+  display: block;
+}
+
+:global(html[data-theme="dark"]) .iconSun {
+  display: block;
+}
+
+:global(html[data-theme="dark"]) .iconMoon {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .topBar {
+    min-height: 56px;
+    padding-inline: var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .context {
+    display: none;
+  }
+
+  .actions {
+    gap: var(--space-2xs);
+  }
+
+  .assetButton {
+    padding-inline: var(--space-xs);
+  }
+}

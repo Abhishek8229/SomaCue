@@ -1,0 +1,87 @@
+[
+  {
+    "name": "lab builds both models and the measurements",
+    "pass": true,
+    "detail": "2.7 s"
+  },
+  {
+    "name": "page title marks the route experimental",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "route is not indexable",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "verdict panel is shown",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "verdict text matches the computed result",
+    "pass": true,
+    "detail": "Not compatible as tested. Asset-level failures: Limb segments have the same proportions; Joints coincide after the best uniform fit; Skeleton sits inside the rig skin at rest. Method-level failures (depend on the lab's own skin weights): Skeleton stays inside the skin during the clip; Soft structures deform without tearing."
+  },
+  {
+    "name": "a failing criterion is never hidden",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "the inside/outside test validates against the rig's own surface",
+    "pass": true,
+    "detail": "97.7% in, 4.1% out"
+  },
+  {
+    "name": "all three sources are credited in the page",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "both models are visible at start",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "Innerscene can be hidden alone",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "Human Atlas can be hidden alone",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "both models can be shown together",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "play advances the clip",
+    "pass": true,
+    "detail": "time=0.47"
+  },
+  {
+    "name": "pause holds the pose",
+    "pass": false,
+    "detail": "0.47 -> 0.54"
+  },
+  {
+    "name": "returning to rest resets the clock",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "no horizontal overflow at 390 px",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "no console errors",
+    "pass": true,
+    "detail": ""
+  }
+]

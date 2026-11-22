@@ -1,0 +1,1004 @@
+{
+  "generatedAt": "2026-10-31T13:26:18.055Z",
+  "durationMs": {
+    "load": 872.4000000953674,
+    "build": 585.2999999523163,
+    "analysis": 726.5
+  },
+  "atlas": {
+    "parts": 2234,
+    "vertices": 1782519,
+    "triangles": 2288268,
+    "heightM": 1.7297412,
+    "skeletonHeightM": 1.7067499000000002,
+    "bounds": {
+      "min": [
+        -0.33411900000000005,
+        1.3877787807814457e-17,
+        -0.1452476
+      ],
+      "max": [
+        0.332825,
+        1.7297412,
+        0.146783
+      ]
+    }
+  },
+  "rig": {
+    "bones": 163,
+    "vertices": 63750,
+    "triangles": 96224,
+    "heightM": 1.7853583439136855,
+    "nativeBounds": {
+      "min": [
+        -0.5930125117301941,
+        0.000690306827891618,
+        -0.10008697956800461
+      ],
+      "max": [
+        0.5930125713348389,
+        1.7860486507415771,
+        0.3882807791233063
+      ]
+    }
+  },
+  "scale": {
+    "heightRatioAtlasOverRig": 0.9630958433984438,
+    "fittedScale": 1.0533553710596733,
+    "atlasSkinHeightM": 1.7194711999999999,
+    "rigSkinHeightM": 1.7853583439136855
+  },
+  "orientation": {
+    "axes": [
+      {
+        "id": "up",
+        "label": "Up: ankles to neck",
+        "atlas": [
+          -0.00032147912017682195,
+          0.9999616925018145,
+          -0.008747009779449632
+        ],
+        "rig": [
+          0,
+          0.9999990254491753,
+          -0.0013961019659781827
+        ],
+        "agreeDeg": 0.4215849485068262
+      },
+      {
+        "id": "front",
+        "label": "Front: ankle to toe (level)",
+        "atlas": [
+          -0.0021418315273248932,
+          0,
+          0.9999977062762236
+        ],
+        "rig": [
+          0,
+          0,
+          1
+        ],
+        "agreeDeg": 0.12271800077227032
+      },
+      {
+        "id": "left",
+        "label": "Subject left: right shoulder to left shoulder",
+        "atlas": [
+          0.9999385608394644,
+          0.005348615973680907,
+          -0.009709111878381084
+        ],
+        "rig": [
+          0.9999999999999999,
+          0,
+          0
+        ],
+        "agreeDeg": 0.6351298004133207
+      }
+    ],
+    "residualDeg": {
+      "yaw": 0.2669999053345274,
+      "pitch": 0.8527477205209512,
+      "roll": 0.027374315153145295
+    }
+  },
+  "alignment": {
+    "fitScale": 1.0533553710596733,
+    "fitTranslation": [
+      0.00017171935510449456,
+      -0.0024354287224716,
+      0.03248621628549998
+    ],
+    "landmarks": [
+      {
+        "id": "hip.L",
+        "label": "Hip joint (L)",
+        "atlas": [
+          0.10521485589039545,
+          0.9322748373505253,
+          0.007419543771281949
+        ],
+        "rig": [
+          0.11100965143208633,
+          0.9597769797760765,
+          -0.007327767927634975
+        ],
+        "errorMm": 31.740048766665648
+      },
+      {
+        "id": "hip.R",
+        "label": "Hip joint (R)",
+        "atlas": [
+          -0.1064254387788043,
+          0.9311613885923669,
+          0.0069999607389236405
+        ],
+        "rig": [
+          -0.11100965143208633,
+          0.9597769797760765,
+          -0.007327767927634975
+        ],
+        "errorMm": 32.32879325286107
+      },
+      {
+        "id": "knee.L",
+        "label": "Knee (L)",
+        "atlas": [
+          0.07736359400555612,
+          0.47284789959539786,
+          0.008569551728714181
+        ],
+        "rig": [
+          0.08428705626201659,
+          0.5189222688385391,
+          -0.006223241850136046
+        ],
+        "errorMm": 48.8836227446005
+      },
+      {
+        "id": "knee.R",
+        "label": "Knee (R)",
+        "atlas": [
+          -0.07694140162028121,
+          0.4730492728472123,
+          0.009081048289716169
+        ],
+        "rig": [
+          -0.08264593092887616,
+          0.5190279733634615,
+          -0.005324579247979872
+        ],
+        "errorMm": 48.5191164444529
+      },
+      {
+        "id": "ankle.L",
+        "label": "Ankle (L)",
+        "atlas": [
+          0.07476029518563718,
+          0.062304608681909485,
+          0.010233912094508822
+        ],
+        "rig": [
+          0.0814300384300745,
+          0.06843866566857981,
+          -0.004398131661877117
+        ],
+        "errorMm": 17.210718594853297
+      },
+      {
+        "id": "ankle.R",
+        "label": "Ankle (R)",
+        "atlas": [
+          -0.07426408642178413,
+          0.062461037842837394,
+          0.009798115461043599
+        ],
+        "rig": [
+          -0.07970795721151346,
+          0.06854189692568052,
+          -0.004538953026325238
+        ],
+        "errorMm": 16.497397042326664
+      },
+      {
+        "id": "toe.L",
+        "label": "Second toe, distal (L)",
+        "atlas": [
+          0.14524066762424007,
+          0.008996588187692015,
+          0.1657905140370015
+        ],
+        "rig": [
+          0.15741688464209447,
+          0.010965197919021829,
+          0.16331466875070627
+        ],
+        "errorMm": 12.580361482161152
+      },
+      {
+        "id": "toe.R",
+        "label": "Second toe, distal (R)",
+        "atlas": [
+          -0.14541225630809188,
+          0.008943818202899705,
+          0.1660288354635437
+        ],
+        "rig": [
+          -0.15602579008062026,
+          0.011135491563080947,
+          0.1630464761362526
+        ],
+        "errorMm": 11.240329106187636
+      },
+      {
+        "id": "shoulder.L",
+        "label": "Shoulder joint (L)",
+        "atlas": [
+          0.16850414669853775,
+          1.461408417479594,
+          0.01335554400781147
+        ],
+        "rig": [
+          0.2035725288496336,
+          1.4289560402562898,
+          0.01859690344391106
+        ],
+        "errorMm": 48.06682913275356
+      },
+      {
+        "id": "shoulder.R",
+        "label": "Shoulder joint (R)",
+        "atlas": [
+          -0.16707849568459276,
+          1.4596134045139642,
+          0.016613953621103354
+        ],
+        "rig": [
+          -0.2035725288496336,
+          1.4289560402562898,
+          0.01859690344391106
+        ],
+        "errorMm": 47.70346454796134
+      },
+      {
+        "id": "elbow.L",
+        "label": "Elbow (L)",
+        "atlas": [
+          0.21986679401513295,
+          1.175658731164459,
+          -0.0037370947522397738
+        ],
+        "rig": [
+          0.2495392732745018,
+          1.1732389737074747,
+          0.003301275058719362
+        ],
+        "errorMm": 30.591663915912225
+      },
+      {
+        "id": "elbow.R",
+        "label": "Elbow (R)",
+        "atlas": [
+          -0.21974894139046672,
+          1.1761444331658666,
+          -0.003679430467990706
+        ],
+        "rig": [
+          -0.2510027475660732,
+          1.1737021077237828,
+          0.0003240255681440235
+        ],
+        "errorMm": 31.60368671944291
+      },
+      {
+        "id": "wrist.L",
+        "label": "Wrist (L)",
+        "atlas": [
+          0.26462705300912154,
+          0.936224272629467,
+          0.04900387990867613
+        ],
+        "rig": [
+          0.29889189447613795,
+          0.909242731809151,
+          0.061455530050059694
+        ],
+        "errorMm": 45.35555640758427
+      },
+      {
+        "id": "wrist.R",
+        "label": "Wrist (R)",
+        "atlas": [
+          -0.2635641017280805,
+          0.9358436698364784,
+          0.04835848967432832
+        ],
+        "rig": [
+          -0.2992132723705019,
+          0.9092996871067532,
+          0.05758421404023695
+        ],
+        "errorMm": 45.39339573907361
+      },
+      {
+        "id": "finger.L",
+        "label": "Middle finger, distal (L)",
+        "atlas": [
+          0.2914135502391713,
+          0.7759421972000181,
+          0.12223472096880356
+        ],
+        "rig": [
+          0.3260542833377845,
+          0.7467064268066443,
+          0.1357153938970452
+        ],
+        "errorMm": 47.29100551586585
+      },
+      {
+        "id": "finger.R",
+        "label": "Middle finger, distal (R)",
+        "atlas": [
+          -0.2913248570756629,
+          0.7755324954796468,
+          0.12332296681361096
+        ],
+        "rig": [
+          -0.327223131906545,
+          0.7475448892372182,
+          0.1332227887954145
+        ],
+        "errorMm": 46.583244995235894
+      },
+      {
+        "id": "skullBase",
+        "label": "Skull base (atlas vertebra C1)",
+        "atlas": [
+          -0.0004410379907059028,
+          1.6293829210377617,
+          -0.0013709141606884773
+        ],
+        "rig": [
+          -0.00023463753847508765,
+          1.640511152637697,
+          0.013378846879341369
+        ],
+        "errorMm": 18.47797582059412
+      },
+      {
+        "id": "neck",
+        "label": "Cervical spine base (C7)",
+        "atlas": [
+          -0.00022437684931731232,
+          1.5320369999008667,
+          -0.0028395581424876942
+        ],
+        "rig": [
+          0,
+          1.5350834903371433,
+          0.011787454633507104
+        ],
+        "errorMm": 14.942588520666334
+      }
+    ],
+    "segments": [
+      {
+        "id": "thigh.L",
+        "label": "Thigh (hip to knee) (L)",
+        "atlasM": 0.4369577532104068,
+        "rigM": 0.4416633946344464,
+        "ratio": 0.9893456385989734
+      },
+      {
+        "id": "thigh.R",
+        "label": "Thigh (hip to knee) (R)",
+        "atlasM": 0.43581174923304905,
+        "rigM": 0.4416633946344464,
+        "ratio": 0.9867508933896579
+      },
+      {
+        "id": "shank.L",
+        "label": "Shank (knee to ankle) (L)",
+        "atlasM": 0.38975917303986907,
+        "rigM": 0.45049431780230115,
+        "ratio": 0.86518110803545
+      },
+      {
+        "id": "shank.R",
+        "label": "Shank (knee to ankle) (R)",
+        "atlasM": 0.38979968327478703,
+        "rigM": 0.45049431780230115,
+        "ratio": 0.8652710319996758
+      },
+      {
+        "id": "foot.L",
+        "label": "Foot (ankle to toe) (L)",
+        "atlasM": 0.16984319195254596,
+        "rigM": 0.19288374989595342,
+        "ratio": 0.8805469203298042
+      },
+      {
+        "id": "foot.R",
+        "label": "Foot (ankle to toe) (R)",
+        "atlasM": 0.17070887385770567,
+        "rigM": 0.19288374989595342,
+        "ratio": 0.88503502213012
+      },
+      {
+        "id": "upperArm.L",
+        "label": "Upper arm (shoulder to elbow) (L)",
+        "atlasM": 0.2761004070549233,
+        "rigM": 0.2602626806364378,
+        "ratio": 1.0608528521252314
+      },
+      {
+        "id": "upperArm.R",
+        "label": "Upper arm (shoulder to elbow) (R)",
+        "atlasM": 0.2743936292926355,
+        "rigM": 0.2602626806364378,
+        "ratio": 1.0542949477875287
+      },
+      {
+        "id": "forearm.L",
+        "label": "Forearm (elbow to wrist) (L)",
+        "atlasM": 0.23660268237643658,
+        "rigM": 0.27478864167585465,
+        "ratio": 0.8610351611823065
+      },
+      {
+        "id": "forearm.R",
+        "label": "Forearm (elbow to wrist) (R)",
+        "atlasM": 0.2370939727786702,
+        "rigM": 0.27478864167585465,
+        "ratio": 0.8628230458606447
+      },
+      {
+        "id": "hand.L",
+        "label": "Hand (wrist to fingertip) (L)",
+        "atlasM": 0.1692146286335282,
+        "rigM": 0.1807472007148099,
+        "ratio": 0.9361950169315305
+      },
+      {
+        "id": "hand.R",
+        "label": "Hand (wrist to fingertip) (R)",
+        "atlasM": 0.17006305571675678,
+        "rigM": 0.1807472007148099,
+        "ratio": 0.9408890153994086
+      },
+      {
+        "id": "shoulderWidth",
+        "label": "Shoulder joint width",
+        "atlasM": 0.31860402556088735,
+        "rigM": 0.4071450576992672,
+        "ratio": 0.7825319736441954
+      },
+      {
+        "id": "hipWidth",
+        "label": "Hip joint width",
+        "atlasM": 0.20092330216981297,
+        "rigM": 0.22201930286417265,
+        "ratio": 0.9049812317117948
+      },
+      {
+        "id": "trunk",
+        "label": "Trunk (hip centre to C7)",
+        "atlasM": 0.569991031385082,
+        "rigM": 0.5756239856256103,
+        "ratio": 0.99021417734286
+      }
+    ],
+    "rmsMm": 35.946567662050455,
+    "maxMm": 48.8836227446005,
+    "matchedPose": {
+      "armAbductionBeforeDeg": 40.78854054613044,
+      "armAbductionAfterDeg": 10.7273748553918,
+      "atlasArmAbductionDeg": 10.72692626977295
+    }
+  },
+  "skinning": {
+    "meshes": 15,
+    "softVertices": 1283617,
+    "rigidParts": 602,
+    "unmappedBones": []
+  },
+  "rest": {
+    "label": "Rest (matched pose)",
+    "timeS": 0,
+    "skeletalInsidePct": 78.82001988730526,
+    "softInsidePct": 90.7291322995711,
+    "regions": [
+      {
+        "region": "torso",
+        "samples": 1200,
+        "insidePct": 98.16666666666667
+      },
+      {
+        "region": "head",
+        "samples": 712,
+        "insidePct": 58.28651685393258
+      },
+      {
+        "region": "arm.L",
+        "samples": 314,
+        "insidePct": 63.05732484076433
+      },
+      {
+        "region": "arm.R",
+        "samples": 265,
+        "insidePct": 73.58490566037736
+      },
+      {
+        "region": "leg.L",
+        "samples": 262,
+        "insidePct": 75.57251908396947
+      },
+      {
+        "region": "leg.R",
+        "samples": 264,
+        "insidePct": 73.48484848484848
+      }
+    ],
+    "softEdgesOver25Pct": 0,
+    "maxEdgeStretch": 1,
+    "lowestSkinYmm": -8.485563099384308
+  },
+  "heightMatchedFit": {
+    "label": "Height-matched fit",
+    "timeS": 0,
+    "skeletalInsidePct": 69.83758700696056,
+    "softInsidePct": 100,
+    "regions": [
+      {
+        "region": "torso",
+        "samples": 1147,
+        "insidePct": 93.8099389712293
+      },
+      {
+        "region": "head",
+        "samples": 772,
+        "insidePct": 50.259067357512954
+      },
+      {
+        "region": "arm.L",
+        "samples": 307,
+        "insidePct": 64.82084690553746
+      },
+      {
+        "region": "arm.R",
+        "samples": 265,
+        "insidePct": 66.0377358490566
+      },
+      {
+        "region": "leg.L",
+        "samples": 262,
+        "insidePct": 51.908396946564885
+      },
+      {
+        "region": "leg.R",
+        "samples": 264,
+        "insidePct": 50.378787878787875
+      }
+    ],
+    "softEdgesOver25Pct": 0,
+    "maxEdgeStretch": 1,
+    "lowestSkinYmm": -8.485563099384308,
+    "scale": 1.0383182596566234
+  },
+  "validation": {
+    "offsetMm": 5,
+    "samples": 3036,
+    "inwardInsidePct": 97.66139657444005,
+    "outwardInsidePct": 4.051383399209486
+  },
+  "motion": {
+    "clip": "Jumping Jacks (retargeted)",
+    "durationS": 1.25,
+    "sourceChannels": 198,
+    "mappedBones": 21,
+    "requiredBones": 21,
+    "missingBones": [],
+    "bakedFrames": 39,
+    "samples": [
+      {
+        "label": "Native A-pose",
+        "timeS": 0,
+        "skeletalInsidePct": 79.74809413324495,
+        "softInsidePct": 86.40712636093699,
+        "regions": [
+          {
+            "region": "torso",
+            "samples": 1200,
+            "insidePct": 97.16666666666667
+          },
+          {
+            "region": "head",
+            "samples": 712,
+            "insidePct": 58.28651685393258
+          },
+          {
+            "region": "arm.L",
+            "samples": 314,
+            "insidePct": 62.10191082802548
+          },
+          {
+            "region": "arm.R",
+            "samples": 265,
+            "insidePct": 71.69811320754717
+          },
+          {
+            "region": "leg.L",
+            "samples": 262,
+            "insidePct": 83.20610687022901
+          },
+          {
+            "region": "leg.R",
+            "samples": 264,
+            "insidePct": 84.0909090909091
+          }
+        ],
+        "softEdgesOver25Pct": 3.3903054076772206,
+        "maxEdgeStretch": 28.76542524935529,
+        "lowestSkinYmm": 0.6902410532347858
+      },
+      {
+        "label": "Clip 0%",
+        "timeS": 0,
+        "skeletalInsidePct": 75.80377858800132,
+        "softInsidePct": 86.37413394919169,
+        "regions": [
+          {
+            "region": "torso",
+            "samples": 1200,
+            "insidePct": 97.33333333333333
+          },
+          {
+            "region": "head",
+            "samples": 712,
+            "insidePct": 60.674157303370784
+          },
+          {
+            "region": "arm.L",
+            "samples": 314,
+            "insidePct": 50.955414012738856
+          },
+          {
+            "region": "arm.R",
+            "samples": 265,
+            "insidePct": 43.77358490566038
+          },
+          {
+            "region": "leg.L",
+            "samples": 262,
+            "insidePct": 78.62595419847328
+          },
+          {
+            "region": "leg.R",
+            "samples": 264,
+            "insidePct": 77.65151515151516
+          }
+        ],
+        "softEdgesOver25Pct": 14.373774166433174,
+        "maxEdgeStretch": 110.91967350024099,
+        "lowestSkinYmm": -23.76267872750759
+      },
+      {
+        "label": "Clip 20%",
+        "timeS": 0.25,
+        "skeletalInsidePct": 75.96950613191912,
+        "softInsidePct": 85.9452325965028,
+        "regions": [
+          {
+            "region": "torso",
+            "samples": 1200,
+            "insidePct": 97.58333333333333
+          },
+          {
+            "region": "head",
+            "samples": 712,
+            "insidePct": 60.95505617977528
+          },
+          {
+            "region": "arm.L",
+            "samples": 314,
+            "insidePct": 51.27388535031847
+          },
+          {
+            "region": "arm.R",
+            "samples": 265,
+            "insidePct": 47.54716981132076
+          },
+          {
+            "region": "leg.L",
+            "samples": 262,
+            "insidePct": 76.33587786259542
+          },
+          {
+            "region": "leg.R",
+            "samples": 264,
+            "insidePct": 75.75757575757575
+          }
+        ],
+        "softEdgesOver25Pct": 14.205659848697113,
+        "maxEdgeStretch": 104.83955116638477,
+        "lowestSkinYmm": -21.657882258296013
+      },
+      {
+        "label": "Clip 40%",
+        "timeS": 0.5,
+        "skeletalInsidePct": 75.3397414650315,
+        "softInsidePct": 85.91224018475751,
+        "regions": [
+          {
+            "region": "torso",
+            "samples": 1200,
+            "insidePct": 97.41666666666667
+          },
+          {
+            "region": "head",
+            "samples": 712,
+            "insidePct": 59.69101123595506
+          },
+          {
+            "region": "arm.L",
+            "samples": 314,
+            "insidePct": 51.910828025477706
+          },
+          {
+            "region": "arm.R",
+            "samples": 265,
+            "insidePct": 47.924528301886795
+          },
+          {
+            "region": "leg.L",
+            "samples": 262,
+            "insidePct": 74.42748091603053
+          },
+          {
+            "region": "leg.R",
+            "samples": 264,
+            "insidePct": 73.48484848484848
+          }
+        ],
+        "softEdgesOver25Pct": 12.104230876996358,
+        "maxEdgeStretch": 51.66635610648965,
+        "lowestSkinYmm": 52.08392068743706
+      },
+      {
+        "label": "Clip 60%",
+        "timeS": 0.75,
+        "skeletalInsidePct": 75.63805104408353,
+        "softInsidePct": 86.73705047838997,
+        "regions": [
+          {
+            "region": "torso",
+            "samples": 1200,
+            "insidePct": 97.33333333333333
+          },
+          {
+            "region": "head",
+            "samples": 712,
+            "insidePct": 60.95505617977528
+          },
+          {
+            "region": "arm.L",
+            "samples": 314,
+            "insidePct": 49.044585987261144
+          },
+          {
+            "region": "arm.R",
+            "samples": 265,
+            "insidePct": 40.37735849056604
+          },
+          {
+            "region": "leg.L",
+            "samples": 262,
+            "insidePct": 79.77099236641222
+          },
+          {
+            "region": "leg.R",
+            "samples": 264,
+            "insidePct": 79.54545454545455
+          }
+        ],
+        "softEdgesOver25Pct": 12.58055477724853,
+        "maxEdgeStretch": 48.93069332889374,
+        "lowestSkinYmm": -21.000392735004425
+      },
+      {
+        "label": "Clip 80%",
+        "timeS": 1,
+        "skeletalInsidePct": 75.07457739476301,
+        "softInsidePct": 85.81326294952162,
+        "regions": [
+          {
+            "region": "torso",
+            "samples": 1200,
+            "insidePct": 97.25
+          },
+          {
+            "region": "head",
+            "samples": 712,
+            "insidePct": 60.95505617977528
+          },
+          {
+            "region": "arm.L",
+            "samples": 314,
+            "insidePct": 51.910828025477706
+          },
+          {
+            "region": "arm.R",
+            "samples": 265,
+            "insidePct": 49.056603773584904
+          },
+          {
+            "region": "leg.L",
+            "samples": 262,
+            "insidePct": 71.7557251908397
+          },
+          {
+            "region": "leg.R",
+            "samples": 264,
+            "insidePct": 69.31818181818181
+          }
+        ],
+        "softEdgesOver25Pct": 13.757355001400953,
+        "maxEdgeStretch": 89.8798148720167,
+        "lowestSkinYmm": 144.26451921463013
+      },
+      {
+        "label": "Clip 100%",
+        "timeS": 1.25,
+        "skeletalInsidePct": 75.80377858800132,
+        "softInsidePct": 86.37413394919169,
+        "regions": [
+          {
+            "region": "torso",
+            "samples": 1200,
+            "insidePct": 97.33333333333333
+          },
+          {
+            "region": "head",
+            "samples": 712,
+            "insidePct": 60.674157303370784
+          },
+          {
+            "region": "arm.L",
+            "samples": 314,
+            "insidePct": 50.955414012738856
+          },
+          {
+            "region": "arm.R",
+            "samples": 265,
+            "insidePct": 43.77358490566038
+          },
+          {
+            "region": "leg.L",
+            "samples": 262,
+            "insidePct": 78.62595419847328
+          },
+          {
+            "region": "leg.R",
+            "samples": 264,
+            "insidePct": 77.65151515151516
+          }
+        ],
+        "softEdgesOver25Pct": 14.373774166433174,
+        "maxEdgeStretch": 110.91967350024099,
+        "lowestSkinYmm": -23.76267872750759
+      }
+    ],
+    "worstSkeletalInsidePct": 75.07457739476301,
+    "worstSoftEdgesOver25Pct": 14.373774166433174,
+    "finite": true
+  },
+  "checks": [
+    {
+      "id": "scale.height",
+      "basis": "assets",
+      "group": "scale",
+      "label": "Overall height matches",
+      "criterion": "Atlas skin height within 5% of rig skin height",
+      "value": "1.719 m vs 1.785 m (-3.7%)",
+      "pass": true
+    },
+    {
+      "id": "orientation.axes",
+      "basis": "assets",
+      "group": "orientation",
+      "label": "Up, front and left axes agree",
+      "criterion": "Each axis within 10° (both files: Y up, +Z front, +X subject left)",
+      "value": "worst 0.6°",
+      "pass": true
+    },
+    {
+      "id": "orientation.residual",
+      "basis": "assets",
+      "group": "orientation",
+      "label": "No re-orientation needed",
+      "criterion": "Residual rotation of the landmark clouds within 5°",
+      "value": "yaw 0.3°, pitch 0.9°, roll 0.0°",
+      "pass": true
+    },
+    {
+      "id": "alignment.proportions",
+      "basis": "assets",
+      "group": "alignment",
+      "label": "Limb segments have the same proportions",
+      "criterion": "Every limb segment within 5% of its counterpart after uniform scaling",
+      "value": "8 of 12 outside; worst Upper arm (shoulder to elbow) (L) at 12%",
+      "pass": false
+    },
+    {
+      "id": "alignment.landmarks",
+      "basis": "assets",
+      "group": "alignment",
+      "label": "Joints coincide after the best uniform fit",
+      "criterion": "RMS ≤ 15 mm and worst ≤ 30 mm over 18 landmarks",
+      "value": "RMS 35.9 mm, worst 48.9 mm",
+      "pass": false
+    },
+    {
+      "id": "method.containment",
+      "basis": "method",
+      "group": "alignment",
+      "label": "Containment test is valid",
+      "criterion": "On the rig's own surface, points 5 mm inside read inside (≥ 95%) and points 5 mm outside read outside (≤ 5%)",
+      "value": "97.7% inside, 4.1% outside, 3036 points",
+      "pass": true
+    },
+    {
+      "id": "alignment.containment",
+      "basis": "assets",
+      "group": "alignment",
+      "label": "Skeleton sits inside the rig skin at rest",
+      "criterion": "≥ 95% overall and ≥ 90% in every region",
+      "value": "78.8% overall; weakest head 58.3%",
+      "pass": false
+    },
+    {
+      "id": "movement.retarget",
+      "basis": "method",
+      "group": "movement",
+      "label": "Clip retargets to the rig",
+      "criterion": "All mapped bones found and every baked value finite",
+      "value": "21 of 21 bones; 39 frames",
+      "pass": true
+    },
+    {
+      "id": "movement.containment",
+      "basis": "method",
+      "group": "movement",
+      "label": "Skeleton stays inside the skin during the clip",
+      "criterion": "Worst sampled frame ≥ 90% inside",
+      "value": "worst 75.1%",
+      "pass": false
+    },
+    {
+      "id": "movement.softTissue",
+      "basis": "method",
+      "group": "movement",
+      "label": "Soft structures deform without tearing",
+      "criterion": "≤ 3% of sampled edges stretched or squashed by more than 25%. Depends on the lab's generated skin weights as much as on the assets",
+      "value": "worst 14.4%",
+      "pass": false
+    },
+    {
+      "id": "licence.register",
+      "basis": "assets",
+      "group": "licence",
+      "label": "All three sources have a verified licence",
+      "criterion": "Source, licence, revision and attribution recorded (docs/3d-lab/asset-register.md)",
+      "value": "CC BY 4.0 (atlas), CC0 (rig), CC0 (clip)",
+      "pass": true
+    }
+  ],
+  "verdict": {
+    "usableTogether": false,
+    "passed": 6,
+    "failed": 5,
+    "assetFailures": 3,
+    "methodFailures": 2,
+    "summary": "Not compatible as tested. Asset-level failures: Limb segments have the same proportions; Joints coincide after the best uniform fit; Skeleton sits inside the rig skin at rest. Method-level failures (depend on the lab's own skin weights): Skeleton stays inside the skin during the clip; Soft structures deform without tearing."
+  }
+}

@@ -1,0 +1,537 @@
+/* Sign in and create account: the landing page's dark emerald, as one calm screen.
+ * A live 3D stage on the left, one Google button on the right.
+ * Everything reads the shared tokens in app/tokens.css; nothing here sets a raw colour. */
+
+.shell {
+  --a-ground: var(--workspace-canvas);
+  --a-panel: var(--workspace-panel);
+  --a-raised: var(--workspace-panel-raised);
+  --a-well: var(--workspace-well);
+  --a-rule: var(--workspace-rule);
+  --a-rule-strong: var(--workspace-rule-strong);
+  --a-ink: var(--stage-ink);
+  --a-ink-2: var(--stage-ink-2);
+  --a-muted: var(--stage-muted);
+  --a-signal: var(--landing-signal);
+  --a-signal-ink: var(--landing-signal-ink);
+  --a-signal-hover: var(--landing-signal-hover);
+  --a-signal-soft: color-mix(in oklab, var(--landing-signal) 12%, transparent);
+  --a-error: var(--stage-error);
+  --a-error-soft: color-mix(in oklab, var(--stage-error) 14%, transparent);
+
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--a-ground);
+  color: var(--a-ink);
+  font-family: var(--font-body);
+}
+
+:global(html):has(.shell) {
+  background: var(--workspace-canvas);
+}
+
+/* Top bar */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 64px;
+  padding-inline: var(--gutter);
+  border-bottom: 1px solid var(--a-rule);
+  background: color-mix(in oklab, var(--a-ground) 88%, transparent);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--a-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  text-decoration: none;
+}
+
+.brandMark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--a-signal);
+  color: var(--a-signal-ink);
+  font-size: var(--text-ui);
+  font-weight: 700;
+}
+
+.switch {
+  display: inline-flex;
+  padding: var(--space-3xs);
+  border: 1px solid var(--a-rule-strong);
+  border-radius: var(--radius-input);
+}
+
+.switchLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding-inline: var(--space-md);
+  border-radius: 4px;
+  color: var(--a-ink-2);
+  font-size: var(--text-ui);
+  text-decoration: none;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out);
+}
+
+.switchLink:hover {
+  color: var(--a-ink);
+}
+
+.switchLink[aria-current="page"] {
+  background: var(--a-signal-soft);
+  color: var(--a-signal);
+  font-weight: 600;
+}
+
+/* Two columns: the stage, then the card. In the document the card comes first, so a phone shows it first. */
+.main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  align-items: center;
+  gap: var(--space-2xl);
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+  padding: var(--space-xl) var(--gutter) var(--space-2xl);
+}
+
+.cardCol {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.showcase {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  min-width: 0;
+}
+
+/* Card */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  width: 100%;
+  max-width: 460px;
+  margin-inline: auto;
+  padding: var(--space-xl);
+  border: 1px solid var(--a-rule-strong);
+  border-radius: var(--radius-shell);
+  background: linear-gradient(180deg, var(--a-signal-soft), var(--a-panel) 55%);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-display-s);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: var(--tracking-display);
+}
+
+.subtitle {
+  margin-top: var(--space-xs);
+  color: var(--a-ink-2);
+  font-size: var(--text-lg);
+  line-height: 1.45;
+}
+
+.banner {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid color-mix(in oklab, var(--a-error) 55%, transparent);
+  border-radius: var(--radius-input);
+  background: var(--a-error-soft);
+  color: var(--a-ink);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+}
+
+/* The one action: a bright button that cannot be mistaken for anything else on the page. */
+.google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--space-lg);
+  border: 1px solid var(--a-ink);
+  border-radius: var(--radius-input);
+  background: var(--a-ink);
+  color: var(--a-ground);
+  font-family: inherit;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    translate var(--dur-micro) var(--ease-out);
+}
+
+.google:hover {
+  border-color: var(--a-signal);
+  background: color-mix(in oklab, var(--a-ink) 88%, var(--a-signal));
+}
+
+.google:active {
+  translate: 0 1px;
+}
+
+.assure {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assureItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  color: var(--a-ink-2);
+  font-size: var(--text-ui);
+  line-height: 1.45;
+}
+
+.assureItem svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--a-signal);
+}
+
+.legal {
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--a-rule);
+  color: var(--a-muted);
+  font-size: var(--text-ui);
+  line-height: 1.5;
+}
+
+.legal a,
+.link {
+  color: var(--a-signal);
+  text-underline-offset: 3px;
+}
+
+.legal a:hover,
+.link:hover {
+  color: var(--a-signal-hover);
+}
+
+.switchLine {
+  color: var(--a-ink-2);
+  font-size: var(--text-ui);
+}
+
+/* Showcase */
+.lead {
+  max-width: 16ch;
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 3.6vw, 3.5rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
+}
+
+.leadSub {
+  max-width: 46ch;
+  color: var(--a-ink-2);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+}
+
+.points {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.point {
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--a-rule-strong);
+}
+
+.pointTitle {
+  display: block;
+  color: var(--a-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.pointNote {
+  display: block;
+  margin-top: var(--space-3xs);
+  color: var(--a-muted);
+  font-size: var(--text-ui);
+  line-height: 1.45;
+}
+
+/* The live stage */
+.stage {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--a-rule-strong);
+  border-radius: var(--radius-shell);
+  background: var(--stage-bg);
+}
+
+.stageTop {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--a-rule);
+  font-size: var(--text-sm);
+}
+
+.stageLive {
+  color: var(--stage-accent);
+}
+
+.stageView {
+  color: var(--a-muted);
+}
+
+.stageBody {
+  position: relative;
+  aspect-ratio: 16 / 10;
+}
+
+.frames,
+.figure {
+  position: absolute;
+  inset: 0;
+  transition: opacity var(--dur-long) var(--ease-out);
+}
+
+.frames[data-hidden="true"] {
+  opacity: 0;
+}
+
+.frame {
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity var(--dur-long) var(--ease-out);
+}
+
+.frame[data-on="true"] {
+  opacity: 1;
+}
+
+.figure {
+  z-index: 1;
+  opacity: 0;
+}
+
+.figure[data-ready="true"] {
+  opacity: 1;
+}
+
+.stageCaption {
+  position: absolute;
+  top: var(--space-sm);
+  left: 50%;
+  z-index: 2;
+  padding: var(--space-3xs) var(--space-md);
+  border: 1px solid color-mix(in oklab, var(--stage-accent) 45%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--stage-accent) 14%, transparent);
+  color: var(--a-ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  translate: -50% 0;
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease-out);
+}
+
+.stageCaption[data-show="true"] {
+  opacity: 1;
+}
+
+.stageFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--a-rule);
+  background: var(--a-panel);
+}
+
+.exercise {
+  color: var(--a-ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.reps {
+  margin-top: var(--space-3xs);
+  color: var(--a-ink-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.stageControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.pace {
+  display: inline-flex;
+  padding: var(--space-3xs);
+  border: 1px solid var(--a-rule-strong);
+  border-radius: var(--radius-input);
+}
+
+.paceBtn,
+.playBtn {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--a-ink-2);
+  font-family: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out);
+}
+
+.paceBtn {
+  padding-inline: var(--space-sm);
+  border-radius: 4px;
+}
+
+.paceBtn:hover {
+  color: var(--a-ink);
+}
+
+.paceBtn[aria-pressed="true"] {
+  background: var(--a-signal-soft);
+  color: var(--a-signal);
+  font-weight: 600;
+}
+
+.playBtn {
+  padding-inline: var(--space-md);
+  border: 1px solid var(--a-rule-strong);
+  border-radius: var(--radius-input);
+  color: var(--a-ink);
+  font-weight: 600;
+}
+
+.playBtn:hover:not(:disabled) {
+  border-color: var(--a-signal);
+  background: var(--a-signal-soft);
+}
+
+.playBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.google:focus-visible,
+.link:focus-visible,
+.legal a:focus-visible,
+.switchLink:focus-visible,
+.brand:focus-visible,
+.paceBtn:focus-visible,
+.playBtn:focus-visible {
+  outline: 2px solid var(--stage-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 64rem) {
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-xl);
+    padding-top: var(--space-lg);
+  }
+
+  .cardCol,
+  .showcase {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .lead {
+    max-width: 20ch;
+    font-size: clamp(1.9rem, 6vw, 2.5rem);
+  }
+
+  .points {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 40rem) {
+  .bar {
+    min-height: 56px;
+  }
+
+  .switchLink {
+    min-height: 34px;
+    padding-inline: var(--space-sm);
+  }
+
+  .card {
+    padding: var(--space-lg);
+  }
+
+  .stageBody {
+    aspect-ratio: 4 / 3;
+  }
+
+  .stageTop {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .stageFoot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stageControls {
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frames,
+  .figure,
+  .frame,
+  .stageCaption,
+  .google {
+    transition: none;
+  }
+}
