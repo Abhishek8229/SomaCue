@@ -217,6 +217,7 @@ and the scripts all read that one file, and `.gitignore` keeps it out of Git.
 | AI (all three required) | `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
 | Uploads (optional) | `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`, `ALLOW_LOCAL_UPLOAD_FALLBACK` |
 | Razorpay | `RAZORPAY_KEY_ID`, `NEXT_PUBLIC_RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PRO_PLAN_ID`, `RAZORPAY_PRO_PLAN_2M_ID`, `RAZORPAY_PRO_PLAN_3M_ID` |
+| Promo codes (optional) | `PROMO_CODES`, comma-separated, each code optionally capped as `CODE:MAX_USES`; 60 days of Pro per redemption |
 | Public business details | `NEXT_PUBLIC_BUSINESS_LEGAL_NAME`, `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_SUPPORT_PHONE`, `NEXT_PUBLIC_BUSINESS_ADDRESS`, `NEXT_PUBLIC_EMERGENCY_NUMBER` |
 
 The code names no AI model. Whatever `AI_MODEL` holds is what every AI feature uses.

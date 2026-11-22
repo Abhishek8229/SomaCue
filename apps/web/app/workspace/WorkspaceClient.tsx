@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import { completeTriageQuiz } from "@/actions/intake";
@@ -267,6 +268,7 @@ export default function WorkspacePage({
     initialUpgradeTier,
   );
   const currentPlan = billing.billing.plan;
+  const router = useRouter();
   const [triageQuiz, setTriageQuiz] = useState(initialQuiz);
   const [activeReportId, setActiveReportId] = useState(reportId);
   /** The Precautions card: permanent from the analysis, dynamic rebuilt by the server as the plan moves. */
@@ -1316,6 +1318,15 @@ export default function WorkspacePage({
           error={billing.error}
           feature={billing.upgradeFeature}
           onClose={billing.closeUpgrade}
+          onPromoApplied={
+            billing.isPro
+              ? undefined
+              : (next) => {
+                  billing.applyPromo(next);
+                  billing.closeUpgrade();
+                  router.refresh();
+                }
+          }
           onSelectTier={billing.selectTier}
           recommended={billing.recommended}
           tier={billing.tier}
@@ -1330,6 +1341,10 @@ export default function WorkspacePage({
           error={billing.error}
           notice={billing.notice}
           onClose={billing.closeManage}
+          onPromoApplied={(next) => {
+            billing.applyPromo(next);
+            router.refresh();
+          }}
           onRenew={() => {
             billing.closeManage();
             billing.openUpgrade("renew");

@@ -74,8 +74,16 @@ export function useBilling(
     }
   }, [user, tier, refresh]);
 
+  /** A promo code was redeemed on the server: show the new plan right away. */
+  const applyPromo = useCallback((next: BillingStatus) => {
+    setBilling(next);
+    setError(null);
+    setNotice("You're on SomaCue Pro for 2 months. Every Pro feature is unlocked.");
+  }, []);
+
   return {
     billing,
+    applyPromo,
     isPro: billing.plan === "pro",
     upgradeFeature,
     manageOpen,

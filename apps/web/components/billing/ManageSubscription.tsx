@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { PLAN_LIMITS, PRO_DAY_MS, PRO_TIERS, type BillingStatus } from "@/lib/billing/plans";
+import { PromoCodeCard } from "./PromoCodeCard";
 
 const interactive =
   "transition-colors duration-150 ease-out active:translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300 focus-visible:outline-offset-2";
@@ -26,9 +27,11 @@ export type ManageSubscriptionProps = {
   /** Free user starts Pro */
   onUpgrade: () => void;
   onClose: () => void;
+  /** Shows "Apply your promo code" for free users. Omit to hide the card. */
+  onPromoApplied?: (billing: BillingStatus, expiresAt: string) => void;
 };
 
-export function ManageSubscription({ billing, error, notice, onRenew, onUpgrade, onClose }: ManageSubscriptionProps) {
+export function ManageSubscription({ billing, error, notice, onRenew, onUpgrade, onClose, onPromoApplied }: ManageSubscriptionProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLElement>(null);
   const isPro = billing.plan === "pro";
@@ -159,6 +162,8 @@ export function ManageSubscription({ billing, error, notice, onRenew, onUpgrade,
         >
           {isPro ? "Renew Subscription" : "Upgrade to Pro"}
         </button>
+
+        {!isPro && onPromoApplied ? <PromoCodeCard onApplied={onPromoApplied} /> : null}
 
         <p className="mt-auto text-[11px] leading-relaxed text-white/45">
           Payments are handled by Razorpay. Read the{" "}

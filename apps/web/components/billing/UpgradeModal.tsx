@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
-import { PRO_TIERS, type ProTier, type UpgradeReason } from "@/lib/billing/plans";
+import { PRO_TIERS, type BillingStatus, type ProTier, type UpgradeReason } from "@/lib/billing/plans";
 import { ComparisonTable } from "./ComparisonTable";
 import { FundingNote } from "./FundingNote";
+import { PromoCodeCard } from "./PromoCodeCard";
 import { formatBillingDate } from "./ManageSubscription";
 import { TierSelector } from "./TierSelector";
 import type { CheckoutPhase } from "./useBilling";
@@ -49,9 +50,25 @@ export type UpgradeModalProps = {
   onSelectTier: (tier: ProTier) => void;
   onUpgrade: () => void;
   onClose: () => void;
+  /**
+   * Shows "Apply your promo code" below the plan cards. Pass it only while the user has no active Pro plan; the modal
+   * does not close itself, so the handler should close it.
+   */
+  onPromoApplied?: (billing: BillingStatus, expiresAt: string) => void;
 };
 
-export function UpgradeModal({ feature, phase, error, tier, recommended, accessEndsAt, onSelectTier, onUpgrade, onClose }: UpgradeModalProps) {
+export function UpgradeModal({
+  feature,
+  phase,
+  error,
+  tier,
+  recommended,
+  accessEndsAt,
+  onSelectTier,
+  onUpgrade,
+  onClose,
+  onPromoApplied,
+}: UpgradeModalProps) {
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLElement>(null);
@@ -59,6 +76,8 @@ export function UpgradeModal({ feature, phase, error, tier, recommended, accessE
   const busy = phase !== "idle";
   const info = PRO_TIERS[tier];
   const renewing = feature === "renew";
+  // Renewing means Pro is already active, and a code cannot be added to an active plan.
+  const showPromo = Boolean(onPromoApplied) && !renewing;
   const endDate = formatBillingDate(accessEndsAt);
 
   useEffect(() => {
@@ -155,6 +174,12 @@ export function UpgradeModal({ feature, phase, error, tier, recommended, accessE
             Not now
           </button>
         </div>
+
+        {showPromo && onPromoApplied ? (
+          <div className="mt-5">
+            <PromoCodeCard onApplied={onPromoApplied} />
+          </div>
+        ) : null}
 
         <p className="mt-4 text-[11px] leading-relaxed text-white/50">
           Secure payment by Razorpay. See the{" "}

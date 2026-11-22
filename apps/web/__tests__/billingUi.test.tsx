@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 
 const nav = vi.hoisted(() => ({ pathname: "/workspace" }));
@@ -12,11 +12,12 @@ vi.mock("next/navigation", () => ({
 import { ExpiryBanner } from "@/components/billing/ExpiryBanner";
 import { PricingProCard } from "@/components/billing/PricingProCard";
 import { TierSelector } from "@/components/billing/TierSelector";
+import { useBilling } from "@/components/billing/useBilling";
 import { UpgradeModal } from "@/components/billing/UpgradeModal";
 import { Navbar } from "@/components/nav/Navbar";
 import { FUNDING_NOTE } from "@/lib/billing/copy";
 import { publishUpgradeNav } from "@/lib/billing/navBridge";
-import type { ProTier } from "@/lib/billing/plans";
+import type { BillingStatus, ProTier } from "@/lib/billing/plans";
 
 beforeEach(() => window.sessionStorage.clear());
 afterEach(() => {
@@ -191,6 +192,101 @@ describe("upgrade modal", () => {
     expect(screen.getByRole("heading", { name: "Renew SomaCue Pro" })).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toHaveTextContent(/Your Pro access ends on 10 December 2026/);
     expect(screen.getByRole("button", { name: /Renew for 1 month, ₹199/ })).toBeInTheDocument();
+  });
+
+  describe("promo code", () => {
+    const usage = { analysesUsed: 0, companionMessagesUsed: 0 } as BillingStatus["usage"];
+    const PRO: BillingStatus = { plan: "pro", status: "active", currentPeriodEnd: "2027-01-24T10:00:00.000Z", tier: "2m", usage };
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("shows Apply your promo code below the plan cards and above the legal links", () => {
+      render(<UpgradeModal {...baseProps} onPromoApplied={vi.fn()} recommended={null} tier="1m" />);
+      const dialog = screen.getByRole("dialog");
+      const card = within(dialog).getByTestId("promo-code-card");
+      expect(within(card).getByRole("heading", { name: "Apply your promo code" })).toBeInTheDocument();
+      expect(card.compareDocumentPosition(screen.getAllByRole("radio")[0]) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+      expect(card.compareDocumentPosition(within(dialog).getByRole("link", { name: "pricing" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("is hidden when the handler is not given (the user already has Pro)", () => {
+      render(<UpgradeModal {...baseProps} recommended={null} tier="1m" />);
+      expect(screen.queryByTestId("promo-code-card")).not.toBeInTheDocument();
+    });
+
+    it("is hidden while renewing, even if a handler is passed", () => {
+      render(<UpgradeModal {...baseProps} feature="renew" onPromoApplied={vi.fn()} recommended={null} tier="1m" />);
+      expect(screen.queryByTestId("promo-code-card")).not.toBeInTheDocument();
+    });
+
+    it("hands the new plan to the caller on success", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ redeemed: true, durationDays: 60, expiresAt: PRO.currentPeriodEnd, billing: PRO }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      );
+      const onPromoApplied = vi.fn();
+      render(<UpgradeModal {...baseProps} onPromoApplied={onPromoApplied} recommended={null} tier="1m" />);
+      fireEvent.change(screen.getByLabelText("Promo code"), { target: { value: "somacue2m" } });
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+      await waitFor(() => expect(onPromoApplied).toHaveBeenCalledWith(PRO, PRO.currentPeriodEnd));
+    });
+
+    it("keeps the modal open and shows the message when the code is refused", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ error: "INVALID_CODE", message: "That promo code isn't valid. Check it and try again." }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      );
+      const onPromoApplied = vi.fn();
+      const onClose = vi.fn();
+      render(<UpgradeModal {...baseProps} onClose={onClose} onPromoApplied={onPromoApplied} recommended={null} tier="1m" />);
+      fireEvent.change(screen.getByLabelText("Promo code"), { target: { value: "nope" } });
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+      expect(await screen.findByText(/isn't valid/)).toBeInTheDocument();
+      expect(onPromoApplied).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByTestId("upgrade-modal")).toBeInTheDocument();
+    });
+
+    it("does not treat Escape inside the promo field differently from the rest of the dialog", () => {
+      const onClose = vi.fn();
+      render(<UpgradeModal {...baseProps} onClose={onClose} onPromoApplied={vi.fn()} recommended={null} tier="1m" />);
+      fireEvent.keyDown(screen.getByLabelText("Promo code"), { key: "Escape" });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe("closing the Upgrade dialog after a promo code", () => {
+  const usage = { analysesUsed: 0, companionMessagesUsed: 0 } as BillingStatus["usage"];
+  const FREE: BillingStatus = { plan: "free", status: null, currentPeriodEnd: null, tier: null, usage };
+  const PRO: BillingStatus = { plan: "pro", status: "active", currentPeriodEnd: "2027-01-24T10:00:00.000Z", tier: "2m", usage };
+
+  // The same three calls the workspace makes from the modal's onPromoApplied.
+  it("leaves Pro active, the dialog closed and a notice showing", () => {
+    const { result } = renderHook(() => useBilling(FREE, {}));
+    act(() => result.current.openUpgrade("general"));
+    expect(result.current.upgradeFeature).toBe("general");
+
+    act(() => {
+      result.current.applyPromo(PRO);
+      result.current.closeUpgrade();
+    });
+
+    expect(result.current.upgradeFeature).toBeNull();
+    expect(result.current.isPro).toBe(true);
+    expect(result.current.billing).toEqual(PRO);
+    expect(result.current.error).toBeNull();
+    expect(result.current.notice).toMatch(/SomaCue Pro for 2 months/);
   });
 });
 

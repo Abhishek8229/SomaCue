@@ -26,6 +26,7 @@ model User {
   recoveryEvents       RecoveryEvent[]
   subscription         Subscription?
   proPurchases         ProPurchase[]
+  promoRedemptions     PromoRedemption[]
 }
 
 model ClinicalAssessment {
@@ -292,6 +293,21 @@ model ProPurchase {
   @@map("pro_purchases")
 }
 
+/// One redemption of a promo code (see PROMO_CODES in .env.example): free Pro days without Razorpay checkout.
+/// The code is stored upper-case. A user can redeem a code once; the optional MAX_USES cap on a code is
+/// counted from these rows, inside a Serializable transaction.
+model PromoRedemption {
+  id           String   @id @default(cuid())
+  userId       String
+  code         String
+  durationDays Int      @default(60)
+  redeemedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, code])
+  @@index([code])
+}
 /// Razorpay webhook events already handled, so a retried delivery is applied once.
 model BillingEvent {
   eventId     String   @id @map("event_id")
