@@ -216,7 +216,7 @@ and the scripts all read that one file, and `.gitignore` keeps it out of Git.
 | Google sign-in | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
 | AI (all three required) | `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
 | Uploads (optional in development) | `UPLOADS_BUCKET`, `AWS_REGION` |
-| Razorpay | `RAZORPAY_KEY_ID`, `NEXT_PUBLIC_RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PRO_PLAN_ID`, `RAZORPAY_PRO_PLAN_2M_ID`, `RAZORPAY_PRO_PLAN_3M_ID` |
+| Razorpay | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PRO_PLAN_ID`, `RAZORPAY_PRO_PLAN_2M_ID`, `RAZORPAY_PRO_PLAN_3M_ID` |
 | Promo codes (optional) | `PROMO_CODES`, comma-separated, each code optionally capped as `CODE:MAX_USES`; 60 days of Pro per redemption |
 | Public business details | `NEXT_PUBLIC_BUSINESS_LEGAL_NAME`, `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_SUPPORT_PHONE`, `NEXT_PUBLIC_BUSINESS_ADDRESS`, `NEXT_PUBLIC_EMERGENCY_NUMBER` |
 
