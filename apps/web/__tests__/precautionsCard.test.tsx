@@ -5,6 +5,7 @@ import "@testing-library/jest-dom/vitest";
 const seen = vi.hoisted(() => ({ markPrecautionsSeen: vi.fn() }));
 vi.mock("@/actions/precautions", () => ({ markPrecautionsSeen: seen.markPrecautionsSeen }));
 vi.mock("@/actions/intake", () => ({ submitIntakeForm: vi.fn() }));
+vi.mock("@/actions/aiJobs", () => ({ startIntakeJob: vi.fn(), startQuizJob: vi.fn(), startPainRescheduleJob: vi.fn(), startFeedbackJob: vi.fn(), getAiJob: vi.fn() }));
 vi.mock("@/hooks/useDictation", () => ({
   useDictation: () => ({ isListening: false, transcript: "", startListening: vi.fn(), stopListening: vi.fn() }),
 }));

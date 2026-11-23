@@ -3,7 +3,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { AnalysisProgress } from "@/components/workspace/AnalysisProgress";
 import { buildSynthesisCopy, buildTriageCopy } from "@/lib/analysis/progressCopy";
-import { isTrustedUploadUrl, reportFilesFromRecord } from "@/lib/intake/reportFiles";
+import { isTrustedUploadUrl, orderedReportFiles, reportFilesFromRecord } from "@/lib/intake/reportFiles";
 
 const intake = {
   symptoms: "Pain and stiffness around the right knee after long walks.",
@@ -72,18 +72,51 @@ describe("analysis progress copy", () => {
 });
 
 describe("report files", () => {
-  it("accepts only URLs produced by the upload action", () => {
-    expect(isTrustedUploadUrl("/uploads/12f80538-4e07-4160-82c1-48d2dccb3612.jpeg")).toBe(true);
-    expect(isTrustedUploadUrl("https://acct.blob.core.windows.net/patient-scans/a.pdf")).toBe(true);
+  describe("accepts only references produced by the upload action", () => {
+    const UUID = "12f80538-4e07-4160-82c1-48d2dccb3612";
 
-    expect(isTrustedUploadUrl("/uploads/../../.env")).toBe(false);
-    expect(isTrustedUploadUrl("/etc/passwd")).toBe(false);
-    expect(isTrustedUploadUrl("http://acct.blob.core.windows.net/patient-scans/a.pdf")).toBe(false);
-    expect(isTrustedUploadUrl("https://evil.example/patient-scans/a.pdf")).toBe(false);
-    expect(isTrustedUploadUrl("https://acct.blob.core.windows.net/other/a.pdf")).toBe(false);
-    expect(isTrustedUploadUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
+    beforeEach(() => {
+      vi.stubEnv("UPLOADS_BUCKET", "somacue-uploads-test");
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("accepts a file in the configured bucket and, outside production, a development file", () => {
+      expect(isTrustedUploadUrl(`s3://somacue-uploads-test/uploads/${UUID}.pdf`)).toBe(true);
+      expect(isTrustedUploadUrl(`s3://somacue-uploads-test/uploads/${UUID}`)).toBe(true);
+      expect(isTrustedUploadUrl(`/uploads/${UUID}.jpeg`)).toBe(true);
+    });
+
+    it("rejects other buckets, other prefixes, traversal and every URL form", () => {
+      expect(isTrustedUploadUrl(`s3://another-bucket/uploads/${UUID}.pdf`)).toBe(false);
+      expect(isTrustedUploadUrl(`s3://somacue-uploads-test/releases/${UUID}.pdf`)).toBe(false);
+      expect(isTrustedUploadUrl("s3://somacue-uploads-test/uploads/../secrets.pdf")).toBe(false);
+      expect(isTrustedUploadUrl("s3://somacue-uploads-test/uploads/a.pdf")).toBe(false);
+      expect(isTrustedUploadUrl(`https://somacue-uploads-test.s3.amazonaws.com/uploads/${UUID}.pdf`)).toBe(false);
+      expect(isTrustedUploadUrl("https://acct.blob.core.windows.net/patient-scans/a.pdf")).toBe(false);
+      expect(isTrustedUploadUrl("/uploads/../../.env")).toBe(false);
+      expect(isTrustedUploadUrl("/etc/passwd")).toBe(false);
+      expect(isTrustedUploadUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
+    });
+
+    it("accepts nothing from S3 when no bucket is configured", () => {
+      vi.stubEnv("UPLOADS_BUCKET", "");
+      expect(isTrustedUploadUrl(`s3://somacue-uploads-test/uploads/${UUID}.pdf`)).toBe(false);
+    });
+
+    it("does not accept development files in production", () => {
+      vi.stubEnv("NODE_ENV", "production");
+      expect(isTrustedUploadUrl(`/uploads/${UUID}.jpeg`)).toBe(false);
+      expect(isTrustedUploadUrl(`s3://somacue-uploads-test/uploads/${UUID}.pdf`)).toBe(true);
+    });
   });
 
+  it("lists a report's files in the order the download route uses", () => {
+    expect(
+      orderedReportFiles({ fileUrls: ["s1", "p1", "old"], scanUrls: ["s1"], prescriptionUrls: ["p1"] }),
+    ).toEqual(["s1", "p1", "old"]);
+  });
   it("splits a stored report into categories and keeps legacy files", () => {
     expect(
       reportFilesFromRecord({ fileUrls: ["s", "p"], scanUrls: ["s"], prescriptionUrls: ["p"] }),

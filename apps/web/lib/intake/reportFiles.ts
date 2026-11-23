@@ -16,28 +16,32 @@ export const MAX_FILES_PER_CATEGORY = 10;
 export const AI_DISCLAIMER_TEXT =
   "I understand that AI analysis without a physical medical evaluation or a doctor's prescription may not be completely accurate.";
 
+import { parseUploadUrl } from "@/lib/storage/s3";
+
 const LOCAL_UPLOAD = /^\/uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\.[a-z0-9]{1,16})?$/i;
 
 /**
- * Only URLs produced by our own upload action are accepted: a local file in
- * /public/uploads or a blob in the "patient-scans" Azure container. This
- * keeps the AI file loader from fetching arbitrary hosts or local paths.
+ * Only references produced by our own upload action are accepted: a file in the configured S3 bucket
+ * (`s3://<bucket>/uploads/<uuid>.<ext>`), or, outside production, a file in /public/uploads. This keeps the AI file
+ * loader from reading arbitrary buckets, hosts or local paths.
  */
 export function isTrustedUploadUrl(value: string) {
-  if (LOCAL_UPLOAD.test(value)) return true;
-
-  try {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.hostname.endsWith(".blob.core.windows.net") &&
-      url.pathname.startsWith("/patient-scans/")
-    );
-  } catch {
-    return false;
-  }
+  if (parseUploadUrl(value)) return true;
+  return process.env.NODE_ENV !== "production" && LOCAL_UPLOAD.test(value);
 }
 
+/**
+ * Every file of a report in one stable order: scans, then prescriptions, then files from before uploads were
+ * categorized. The download route and the dashboard both address a file by its position in this list.
+ */
+export function orderedReportFiles(record: {
+  fileUrls: string[];
+  scanUrls?: string[] | null;
+  prescriptionUrls?: string[] | null;
+}): string[] {
+  const files = reportFilesFromRecord(record);
+  return [...files.scans, ...files.prescriptions, ...files.uncategorized];
+}
 export function reportFilesFromRecord(record: {
   fileUrls: string[];
   scanUrls?: string[] | null;

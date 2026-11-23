@@ -5,12 +5,12 @@
  * actions in intake.ts, dailyProgress.ts and painEvent.ts, which check both first.
  */
 
-import { BlobServiceClient } from "@azure/storage-blob";
 import { generateObject } from "ai";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { z } from "zod";
 import { getAiModel } from "@/lib/ai/client";
+import { parseUploadUrl, readUpload } from "@/lib/storage/s3";
 import { movementSpecSchema } from "@/lib/kinematics/movement-spec";
 import { isTrustedUploadUrl, type ReportFiles } from "@/lib/intake/reportFiles";
 import { REFERENCE_EXERCISES } from "@/lib/kinematics/reference-exercises";
@@ -185,38 +185,19 @@ async function resolveReportDataUrl(fileUrl: string, abortSignal: AbortSignal) {
   let data: Buffer;
   let mediaType: string | undefined;
 
-  if (fileUrl.startsWith("/")) {
-    const filePath = join(process.cwd(), "public", fileUrl.slice(1));
-    data = await readFile(filePath);
+  const stored = parseUploadUrl(fileUrl);
+  if (stored) {
+    const object = await readUpload(stored.key, abortSignal);
+    data = object.data;
+    mediaType = object.contentType?.split(";")[0];
+  } else if (process.env.NODE_ENV !== "production" && /^\/uploads\/[\w.-]+$/.test(fileUrl)) {
+    // Development only: files saved to public/uploads when no bucket is configured.
+    data = await readFile(join(process.cwd(), "public", fileUrl.slice(1)));
   } else {
-    const response = await fetch(fileUrl, { signal: abortSignal });
-    if (response.ok) {
-      mediaType = response.headers.get("content-type")?.split(";")[0];
-      data = Buffer.from(await response.arrayBuffer());
-    } else {
-      const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING?.trim();
-      if (!connectionString) {
-        throw new Error(`Unable to download report (${response.status}).`);
-      }
-
-      const reportUrl = new URL(fileUrl);
-      const pathParts = reportUrl.pathname
-        .split("/")
-        .filter(Boolean)
-        .map((part) => decodeURIComponent(part));
-      const [containerName, ...blobNameParts] = pathParts;
-      if (!containerName || blobNameParts.length === 0) {
-        throw new Error(`Unable to resolve the Azure report path (${response.status}).`);
-      }
-
-      const blobClient = BlobServiceClient.fromConnectionString(connectionString)
-        .getContainerClient(containerName)
-        .getBlobClient(blobNameParts.join("/"));
-      data = await blobClient.downloadToBuffer(0, undefined, { abortSignal });
-    }
+    throw new Error("Unable to read the report file.");
   }
 
-  if (!mediaType) {
+  if (!mediaType || mediaType === "application/octet-stream") {
     const extension = extname(fileUrl).toLowerCase();
     mediaType =
       extension === ".pdf"
@@ -230,7 +211,6 @@ async function resolveReportDataUrl(fileUrl: string, abortSignal: AbortSignal) {
 
   return `data:${mediaType};base64,${data.toString("base64")}`;
 }
-
 async function createMultimodalContent(
   text: string,
   files: ReportFiles,

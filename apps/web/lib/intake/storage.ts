@@ -1,7 +1,7 @@
-import { BlobServiceClient } from "@azure/storage-blob";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { UPLOAD_PREFIX, putUpload, uploadsBucket } from "@/lib/storage/s3";
 
 async function saveLocalUpload(file: File) {
   const uploadsDirectory = join(process.cwd(), "public", "uploads");
@@ -14,42 +14,34 @@ async function saveLocalUpload(file: File) {
   return `/uploads/${fileName}`;
 }
 
-/** Stores a patient upload in Azure Blob storage, or under public/uploads when Azure is not configured. */
+/**
+ * Stores a patient upload in the private S3 bucket (UPLOADS_BUCKET). Without a bucket, development and tests write
+ * to public/uploads; production refuses, so a missing setting can never put patient files on the web server's disk.
+ */
 export async function storeUpload(file: File) {
   if (!(file instanceof File) || file.size === 0) {
     throw new Error("A non-empty file is required.");
   }
 
-  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING?.trim();
-  if (!connectionString) {
-    console.warn("[SomaCue upload] Azure storage is not configured; using local upload fallback.");
+  if (!uploadsBucket()) {
+    if (process.env.NODE_ENV === "production") {
+      console.error("[SomaCue upload] UPLOADS_BUCKET is not set.");
+      throw new Error("File storage is not configured.");
+    }
+    console.warn("[SomaCue upload] UPLOADS_BUCKET is not set; using the local development folder.");
     return { url: await saveLocalUpload(file), storage: "local" as const };
   }
 
   try {
-    const extension = extname(file.name).replace(/[^a-zA-Z0-9.]/g, "");
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-    const containerClient = blobServiceClient.getContainerClient("patient-scans");
-    const blockBlobClient = containerClient.getBlockBlobClient(`${randomUUID()}${extension}`);
-
-    await blockBlobClient.uploadData(Buffer.from(await file.arrayBuffer()));
-    return { url: blockBlobClient.url, storage: "azure" as const };
+    const extension = extname(file.name).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 16);
+    const key = `${UPLOAD_PREFIX}${randomUUID()}${extension ? `.${extension}` : ""}`;
+    const url = await putUpload(key, Buffer.from(await file.arrayBuffer()), file.type);
+    return { url, storage: "s3" as const };
   } catch (error) {
-    const details =
-      error instanceof Error
-        ? { message: error.message, stack: error.stack }
-        : { message: String(error) };
-    console.error("[SomaCue upload] Azure Blob upload failed.", {
-      fileName: file.name,
+    console.error("[SomaCue upload] S3 upload failed.", {
       fileSize: file.size,
-      ...details,
+      message: error instanceof Error ? error.message : String(error),
     });
-
-    if (process.env.ALLOW_LOCAL_UPLOAD_FALLBACK !== "false") {
-      console.warn("[SomaCue upload] Using local upload fallback after Azure failure.");
-      return { url: await saveLocalUpload(file), storage: "local" as const };
-    }
-
-    throw new Error(`Azure upload failed: ${details.message}`);
+    throw new Error("The file could not be saved.");
   }
 }

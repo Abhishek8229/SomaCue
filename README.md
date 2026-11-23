@@ -40,8 +40,8 @@ chronological Recovery Timeline records the whole journey for sharing with a doc
 
 - **Google-only sign-in.** OAuth 2.0 with PKCE and an HS256 session cookie. There are no passwords to store.
 - **Evidence-based intake.** Separate upload areas for scans (MRI, X-ray, CT) and clinician notes, plus a
-  symptom description with voice dictation. Files go to Azure Blob Storage, or to local storage when Azure
-  is not configured.
+  symptom description with voice dictation. Files go to a private Amazon S3 bucket, or to local storage in development when no bucket
+  is configured.
 - **Cited triage.** The detected condition names what it was derived from (reports and scans, scans and
   symptoms, or symptoms only) and carries an AI safety verdict.
 - **Adaptive cross-questioning.** Six to twelve tailored questions, screened for warning signs before any
@@ -100,11 +100,11 @@ chronological Recovery Timeline records the whole journey for sharing with a doc
 | App | Next.js 16 (App Router, Turbopack, server actions), React 19, TypeScript 5.9 |
 | 3D | three.js r187, React Three Fiber 9, drei, three-stdlib |
 | Styling | Tailwind CSS 4 and CSS modules over a shared design-token file |
-| Database | PostgreSQL with Prisma 7 (`@prisma/adapter-pg`), tested against Neon |
+| Database | PostgreSQL 18 with Prisma 7 (`@prisma/adapter-pg`) |
 | AI | Vercel AI SDK with any OpenAI-compatible provider, or Gemini's native API (chosen automatically for `generativelanguage.googleapis.com` or `AQ.` keys), configured only by `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
 | Auth | Google OAuth 2.0 + PKCE, sessions signed with `jose` |
 | Payments | Razorpay (one-time, fixed-term Pro tiers) |
-| Storage | Azure Blob Storage, with a local fallback for development |
+| Storage | Amazon S3 (private bucket, pre-signed downloads), with a local fallback for development |
 | Tests | Vitest 5, Testing Library, jsdom |
 | Tooling | pnpm 12 workspaces, ESLint 9 |
 
@@ -163,10 +163,10 @@ chronological Recovery Timeline records the whole journey for sharing with a doc
 
 - Node.js `^20.19`, `^22.12` or `>=24` (see `engines` in `package.json`)
 - pnpm 12.16.1 (pinned by `packageManager`; `corepack enable` provides it)
-- A PostgreSQL database, for example a free [Neon](https://neon.tech) project
+- A PostgreSQL 18 database
 - A Google Cloud OAuth 2.0 web client
 - An OpenAI-compatible AI provider and key (for example OpenRouter)
-- Optional: Razorpay test keys for billing, and Azure Blob Storage for uploads
+- Optional: Razorpay test keys for billing, and an S3 bucket for uploads
 
 ### Install and run
 
@@ -215,7 +215,7 @@ and the scripts all read that one file, and `.gitignore` keeps it out of Git.
 | Sessions | `SESSION_SECRET`, `NEXT_PUBLIC_APP_URL` |
 | Google sign-in | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
 | AI (all three required) | `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
-| Uploads (optional) | `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`, `ALLOW_LOCAL_UPLOAD_FALLBACK` |
+| Uploads (optional in development) | `UPLOADS_BUCKET`, `AWS_REGION` |
 | Razorpay | `RAZORPAY_KEY_ID`, `NEXT_PUBLIC_RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PRO_PLAN_ID`, `RAZORPAY_PRO_PLAN_2M_ID`, `RAZORPAY_PRO_PLAN_3M_ID` |
 | Promo codes (optional) | `PROMO_CODES`, comma-separated, each code optionally capped as `CODE:MAX_USES`; 60 days of Pro per redemption |
 | Public business details | `NEXT_PUBLIC_BUSINESS_LEGAL_NAME`, `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_SUPPORT_PHONE`, `NEXT_PUBLIC_BUSINESS_ADDRESS`, `NEXT_PUBLIC_EMERGENCY_NUMBER` |

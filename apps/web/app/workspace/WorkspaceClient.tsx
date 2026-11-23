@@ -4,15 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
-import { completeTriageQuiz } from "@/actions/intake";
+import { startFeedbackJob, startPainRescheduleJob, startQuizJob } from "@/actions/aiJobs";
+import type { completeTriageQuiz } from "@/actions/intake";
 import {
   dismissSkipNotice,
   resetDailyProgress,
-  submitDailyFeedback,
+  type submitDailyFeedback,
   syncSchedule,
   toggleExerciseCompletion,
 } from "@/actions/dailyProgress";
-import { reportPainEvent, reschedulePainEvent } from "@/actions/painEvent";
+import { reportPainEvent, type reschedulePainEvent } from "@/actions/painEvent";
+import { runAiJob } from "@/lib/jobs/client";
 import { ExpiryBanner } from "@/components/billing/ExpiryBanner";
 import { ManageSubscription } from "@/components/billing/ManageSubscription";
 import { UpgradeModal } from "@/components/billing/UpgradeModal";
@@ -681,7 +683,9 @@ export default function WorkspacePage({
     if (!activeReportId) return;
     setPainFlow((flow) => (flow ? { ...flow, reschedule: "pending" } : flow));
     try {
-      const result = await reschedulePainEvent(activeReportId, eventId);
+      const result = await runAiJob<Awaited<ReturnType<typeof reschedulePainEvent>>>(() =>
+        startPainRescheduleJob(activeReportId, eventId),
+      );
       if (result.success) {
         setTreatmentPlan((plan) => (plan ? { ...plan, schedule: result.schedule } : plan));
         setPainFlow((flow) => (flow ? { ...flow, reschedule: "done" } : flow));
@@ -749,7 +753,9 @@ export default function WorkspacePage({
     setFeedbackError(null);
     setFeedbackSubmitting(true);
     try {
-      const result = await submitDailyFeedback(activeReportId, dateKey, submission);
+      const result = await runAiJob<Awaited<ReturnType<typeof submitDailyFeedback>>>(() =>
+        startFeedbackJob(activeReportId, dateKey, submission),
+      );
       if (!result.success) {
         if (result.error === PRO_REQUIRED) {
           setIsFeedbackOpen(false);
@@ -805,10 +811,8 @@ export default function WorkspacePage({
     setFlowPhase("finalizing");
 
     try {
-      const result = await completeTriageQuiz(
-        triageQuiz.reportId,
-        triageQuiz.id,
-        quizAnswers,
+      const result = await runAiJob<Awaited<ReturnType<typeof completeTriageQuiz>>>(() =>
+        startQuizJob(triageQuiz.reportId, triageQuiz.id, quizAnswers),
       );
       if (!("error" in result)) {
         const { escalation: found, routine: plan } = result;

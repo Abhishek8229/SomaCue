@@ -331,6 +331,12 @@ function buildRecords(reports: DashboardReport[]): PatientRecord[] {
       ["scan", "Imaging scans", "Scan", report.scanUrls],
       ["other", "Earlier uploads", "Report file", report.uncategorizedUrls],
     ];
+    // Position of each group in the list the download route uses: scans, then prescriptions, then the rest.
+    const offsets = {
+      scan: 0,
+      prescription: report.scanUrls.length,
+      other: report.scanUrls.length + report.prescriptionUrls.length,
+    } as const;
     for (const [category, categoryLabel, noun, urls] of groups) {
       urls.forEach((url, index) => {
         records.push({
@@ -339,8 +345,13 @@ function buildRecords(reports: DashboardReport[]): PatientRecord[] {
           categoryLabel,
           label: `${noun} ${index + 1}`,
           fileType: fileType(url),
-          // Only files stored by this server can be opened directly.
-          href: url.startsWith("/uploads/") ? url : null,
+          // Files in S3 open through the signed-in download route (owner check, short-lived link). A development
+          // file in public/uploads opens directly. Anything else cannot be opened.
+          href: url.startsWith("s3://")
+            ? `/api/files/${report.id}/${offsets[category] + index}`
+            : url.startsWith("/uploads/")
+              ? url
+              : null,
           uploadedOn: report.createdAt,
           reportId: report.id,
         });

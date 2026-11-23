@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import "@testing-library/jest-dom/vitest";
 
 vi.mock("@/actions/intake", () => ({ submitIntakeForm: vi.fn() }));
+vi.mock("@/actions/aiJobs", () => ({ startIntakeJob: vi.fn(), startQuizJob: vi.fn(), startPainRescheduleJob: vi.fn(), startFeedbackJob: vi.fn(), getAiJob: vi.fn() }));
 vi.mock("@/hooks/useDictation", () => ({
   useDictation: () => ({
     isListening: false,

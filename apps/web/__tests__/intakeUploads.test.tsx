@@ -6,7 +6,9 @@ const { submitIntakeForm } = vi.hoisted(() => ({
   submitIntakeForm: vi.fn(),
 }));
 
-vi.mock("@/actions/intake", () => ({ submitIntakeForm }));
+// The browser starts a background job and polls it; here the job simply resolves with the action's result.
+vi.mock("@/actions/aiJobs", () => ({ startIntakeJob: submitIntakeForm }));
+vi.mock("@/lib/jobs/client", () => ({ runAiJob: (start: () => Promise<unknown>) => start() }));
 vi.mock("@/hooks/useDictation", () => ({
   useDictation: () => ({
     isListening: false,

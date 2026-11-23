@@ -359,9 +359,34 @@ describe("records and triage history", () => {
     expect(model.records[3].uploadedOn).toBe(older.createdAt);
   });
 
-  it("only links files this server stores itself", () => {
+  it("links stored files and leaves unknown ones unlinked", () => {
+    // Development files open directly.
     expect(model.records[0].href).toBe("/uploads/c.pdf");
+    // A reference that is not a stored file (an old or foreign URL) has nothing to open.
     expect(model.records[3].href).toBeNull();
+  });
+
+  it("opens S3 files through the download route, numbered the way the route orders them", () => {
+    const s3 = (name: string) => `s3://somacue-test/uploads/aaaaaaaa-0000-4000-8000-0000000000${name}.pdf`;
+    const mixed = buildDashboardModel(
+      snapshot({
+        reports: [
+          report({
+            id: "report-9",
+            scanUrls: [s3("01"), s3("02")],
+            prescriptionUrls: [s3("03")],
+            uncategorizedUrls: [s3("04")],
+          }),
+        ],
+      }),
+      TODAY,
+    );
+    expect(mixed.records.map((record) => [record.category, record.href])).toEqual([
+      ["prescription", "/api/files/report-9/2"],
+      ["scan", "/api/files/report-9/0"],
+      ["scan", "/api/files/report-9/1"],
+      ["other", "/api/files/report-9/3"],
+    ]);
   });
 
   it("describes each past triage run", () => {

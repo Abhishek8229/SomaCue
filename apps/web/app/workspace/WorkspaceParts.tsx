@@ -10,7 +10,9 @@ import {
 } from "react";
 import { Mic, MicOff } from "lucide-react";
 import Image from "next/image";
-import { submitIntakeForm } from "@/actions/intake";
+import { startIntakeJob } from "@/actions/aiJobs";
+import type { submitIntakeForm } from "@/actions/intake";
+import { runAiJob } from "@/lib/jobs/client";
 import { PRO_REQUIRED } from "@/lib/billing/plans";
 import type { TreatmentPlan, TriageQuestion } from "@/actions/generatePlan";
 import { useDictation } from "@/hooks/useDictation";
@@ -84,7 +86,7 @@ type SelectedFile = {
   category: ReportCategory;
   uploadStatus: "pending" | "uploading" | "success" | "error";
   url?: string;
-  storage?: "azure" | "local";
+  storage?: "s3" | "local";
 };
 
 const DROPZONES: Record<
@@ -334,7 +336,7 @@ export function SidebarIntake({
       payload.set("scanFile", file);
       const response = await fetch("/api/upload", { method: "POST", body: payload });
       if (!response.ok) throw new Error(`Upload failed (${response.status}).`);
-      const result = (await response.json()) as { storage?: "azure" | "local"; url: string };
+      const result = (await response.json()) as { storage?: "s3" | "local"; url: string };
       setSelectedFiles((current) =>
         current.map((item) =>
           item.preview === preview
@@ -388,7 +390,7 @@ export function SidebarIntake({
     });
 
     try {
-      const result = await submitIntakeForm(submission);
+      const result = await runAiJob<Awaited<ReturnType<typeof submitIntakeForm>>>(() => startIntakeJob(submission));
       if (!("error" in result)) {
         onTriageReady({
           reportId: result.reportId,

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const plan = vi.hoisted(() => ({
   subscription: { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: null } as {
@@ -48,10 +48,17 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { completeTriageQuiz, submitIntakeForm } from "@/actions/intake";
 
+beforeEach(() => {
+  vi.stubEnv("UPLOADS_BUCKET", "somacue-test");
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 const QUIZ_QUESTIONS = [{ id: "pain_level", question: "How bad?", answerType: "short_text" }];
 
 const SCAN = "/uploads/12f80538-4e07-4160-82c1-48d2dccb3612.jpeg";
-const RX = "https://acct.blob.core.windows.net/patient-scans/279a4232-b42d-47c3-b15f-c9d658848d8d.pdf";
+const RX = "s3://somacue-test/uploads/279a4232-b42d-47c3-b15f-c9d658848d8d.pdf";
 
 const QUESTIONS = [{ id: "pain_level", question: "How bad?", answerType: "short_text" }];
 const safeAssessment = {

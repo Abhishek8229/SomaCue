@@ -7,6 +7,7 @@ const dictation = vi.hoisted(() => ({
 }));
 vi.mock("@/hooks/useDictation", () => ({ useDictation: () => dictation.state }));
 vi.mock("@/actions/intake", () => ({ submitIntakeForm: vi.fn() }));
+vi.mock("@/actions/aiJobs", () => ({ startIntakeJob: vi.fn(), startQuizJob: vi.fn(), startPainRescheduleJob: vi.fn(), startFeedbackJob: vi.fn(), getAiJob: vi.fn() }));
 vi.mock("@/actions/precautions", () => ({ markPrecautionsSeen: vi.fn() }));
 
 import { SidebarIntake } from "@/app/workspace/WorkspaceParts";
