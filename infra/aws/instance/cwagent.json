@@ -1,0 +1,24 @@
+{
+  "agent": { "metrics_collection_interval": 60, "run_as_user": "root" },
+  "metrics": {
+    "namespace": "CWAgent",
+    "append_dimensions": { "InstanceId": "${aws:InstanceId}" },
+    "aggregation_dimensions": [["InstanceId"]],
+    "metrics_collected": {
+      "mem": { "measurement": ["mem_used_percent"] },
+      "swap": { "measurement": ["swap_used_percent"] },
+      "disk": { "measurement": ["used_percent"], "resources": ["/"], "drop_device": true }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          { "file_path": "/var/log/somacue/app.log", "log_group_name": "/somacue/app", "log_stream_name": "app" },
+          { "file_path": "/var/log/nginx/error.log", "log_group_name": "/somacue/app", "log_stream_name": "nginx-error" },
+          { "file_path": "/var/log/somacue/backup.log", "log_group_name": "/somacue/app", "log_stream_name": "backup" }
+        ]
+      }
+    }
+  }
+}

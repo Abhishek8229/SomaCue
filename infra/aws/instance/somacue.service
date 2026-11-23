@@ -1,0 +1,36 @@
+[Unit]
+Description=SomaCue web app (Next.js standalone)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=somacue
+Group=somacue
+WorkingDirectory=/opt/somacue/current/app
+# Secrets are fetched from SSM into tmpfs by root, then read by systemd. Nothing is written to disk.
+ExecStartPre=+/opt/somacue/bin/load-env.sh
+EnvironmentFile=/run/somacue/env
+Environment=NODE_ENV=production
+Environment=PORT=3100
+Environment=HOSTNAME=127.0.0.1
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/usr/bin/node apps/web/server.js
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/somacue/app.log
+StandardError=append:/var/log/somacue/app.log
+
+# 2 GiB host shared with PostgreSQL: cap the app so the database and nginx are never starved.
+MemoryHigh=1100M
+MemoryMax=1200M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

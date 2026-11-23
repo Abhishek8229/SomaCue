@@ -1,0 +1,32 @@
+version: 0.2
+
+# Builds the SomaCue release on Arm (the same CPU as the server, so native modules such as sharp match).
+# Variables come from the CodeBuild project and from deploy.ps1: ARTIFACTS_BUCKET, RELEASE_KEY, NEXT_PUBLIC_*.
+env:
+  variables:
+    NEXT_OUTPUT: standalone
+    NEXT_TELEMETRY_DISABLED: "1"
+    NODE_OPTIONS: --max-old-space-size=3072
+    # next build imports every route module, and the Prisma client wants a URL at import time. Nothing connects
+    # during the build; the real URL is supplied at runtime from SSM.
+    DATABASE_URL: postgresql://build:build@127.0.0.1:5432/build
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - node --version
+      - npm install -g pnpm@12.16.1
+      - pnpm --version
+  pre_build:
+    commands:
+      - pnpm install --frozen-lockfile
+  build:
+    commands:
+      - pnpm build
+      - bash infra/aws/package-release.sh
+  post_build:
+    commands:
+      - aws s3 cp release.tgz "s3://$ARTIFACTS_BUCKET/$RELEASE_KEY" --only-show-errors
+      - echo "release uploaded to $RELEASE_KEY"

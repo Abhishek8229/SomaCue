@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SomaCue compute - one t4g.small with PostgreSQL 18 and the app, an Elastic IP, the origin DNS name and alarms (ap-southeast-2)
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: somacue.abhishekt.dev
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues: [t4g.small, t4g.medium]
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+Resources:
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags: [{ Key: Name, Value: somacue }, { Key: Project, Value: SomaCue }]
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      SubnetId: !ImportValue somacue-PublicSubnetId
+      SecurityGroupIds: [!ImportValue somacue-WebSecurityGroupId]
+      IamInstanceProfile: !ImportValue somacue-InstanceProfileName
+      CreditSpecification: { CPUCredits: standard }
+      DisableApiTermination: true
+      Monitoring: false
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+        HttpEndpoint: enabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          # Nothing is installed here. The host is configured over SSM by infra/aws/instance/bootstrap.sh.
+          hostnamectl set-hostname somacue
+      Tags:
+        - { Key: Name, Value: somacue }
+        - { Key: Project, Value: SomaCue }
+        - { Key: Env, Value: prod }
+        - { Key: Backup, Value: daily }
+
+  ElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIp.AllocationId
+      InstanceId: !Ref Instance
+
+  # CloudFront connects to this name, so the origin certificate must cover it.
+  OriginRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !ImportValue somacue-HostedZoneId
+      Name: !Sub "origin.${DomainName}"
+      Type: A
+      TTL: "60"
+      ResourceRecords: [!Ref ElasticIp]
+
+  # ---------------------------------------------------------------- alarms (all inside the free allowance)
+  StatusCheckRecover:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-status-check-recover
+      AlarmDescription: System status check failed. Recovers the instance on new hardware.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub "arn:${AWS::Partition}:automate:${AWS::Region}:ec2:recover"
+        - !ImportValue somacue-AlertTopicArn
+
+  StatusCheckInstance:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-instance-status-check
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_Instance
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  CpuCreditsLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-cpu-credits-low
+      AlarmDescription: CPU credit balance is low. In standard mode the instance is throttled at zero.
+      Namespace: AWS/EC2
+      MetricName: CPUCreditBalance
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 20
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  MemoryHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-memory-high
+      AlarmDescription: Memory above 85 percent. Time to move to t4g.medium.
+      Namespace: CWAgent
+      MetricName: mem_used_percent
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: missing
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  SwapHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-swap-high
+      Namespace: CWAgent
+      MetricName: swap_used_percent
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: missing
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  DiskHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-disk-high
+      Namespace: CWAgent
+      MetricName: disk_used_percent
+      Dimensions: [{ Name: InstanceId, Value: !Ref Instance }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: missing
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  HealthCheckFailing:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-health-failing
+      AlarmDescription: /api/health has not answered 200 for 5 minutes (published by a one-minute cron on the host).
+      Namespace: SomaCue
+      MetricName: Healthy
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  PublicHealthFailing:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-public-health-failing
+      AlarmDescription: The public address (DNS, CloudFront, certificate, origin) has not answered 200 for 5 minutes. Probed from the host every minute.
+      Namespace: SomaCue
+      MetricName: PublicHealthy
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  BackupMissing:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-backup-missing
+      AlarmDescription: No successful nightly database backup in the last 26 hours.
+      Namespace: SomaCue
+      MetricName: BackupSuccess
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue somacue-AlertTopicArn]
+
+  # Daily EBS snapshots, 7 kept (a second copy of the database next to the nightly dump).
+  SnapshotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: somacue-dlm
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: dlm.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole]
+
+  SnapshotPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: SomaCue daily volume snapshots
+      State: ENABLED
+      ExecutionRoleArn: !GetAtt SnapshotRole.Arn
+      PolicyDetails:
+        PolicyType: EBS_SNAPSHOT_MANAGEMENT
+        ResourceTypes: [VOLUME]
+        TargetTags: [{ Key: Backup, Value: daily }]
+        Schedules:
+          - Name: daily
+            CopyTags: true
+            TagsToAdd: [{ Key: Project, Value: SomaCue }]
+            CreateRule: { Interval: 24, IntervalUnit: HOURS, Times: ["17:30"] }
+            RetainRule: { Count: 7 }
+
+Outputs:
+  InstanceId: { Value: !Ref Instance }
+  ElasticIp: { Value: !Ref ElasticIp }
+  OriginName: { Value: !Sub "origin.${DomainName}" }

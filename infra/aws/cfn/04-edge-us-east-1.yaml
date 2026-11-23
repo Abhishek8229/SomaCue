@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SomaCue edge - CloudFront distribution, alias DNS records, and the CloudFront 5xx alarm with its own SNS topic (us-east-1)
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: somacue.abhishekt.dev
+  HostedZoneId:
+    Type: String
+  CertificateArn:
+    Type: String
+  OriginVerifyValue:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: Secret sent to the origin as X-Origin-Verify (the same value as the SSM parameter)
+  AlertEmail:
+    Type: String
+    Description: Address that receives alarm and budget emails. Required, no default (this repository is public).
+    AllowedPattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+    ConstraintDescription: Enter a valid email address
+  OriginReadTimeout:
+    Type: Number
+    Default: 60
+    MinValue: 1
+    MaxValue: 180
+
+Resources:
+  # Next.js serves resized images by query string and by the browser's Accept header.
+  ImageCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: somacue-next-image
+        MinTTL: 0
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: whitelist, Headers: [Accept] }
+          QueryStringsConfig: { QueryStringBehavior: all }
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: SomaCue
+        Aliases: [!Ref DomainName]
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: ec2-origin
+            DomainName: !Sub "origin.${DomainName}"
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+              HTTPSPort: 443
+              OriginReadTimeout: !Ref OriginReadTimeout
+              OriginKeepaliveTimeout: 60
+            OriginCustomHeaders:
+              - HeaderName: X-Origin-Verify
+                HeaderValue: !Ref OriginVerifyValue
+        # Pages, server actions and APIs: never cached, everything about the request reaches the origin
+        # (except Host, which nginx sets to the public name).
+        DefaultCacheBehavior:
+          TargetOriginId: ec2-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # Managed-SecurityHeadersPolicy
+        CacheBehaviors:
+          - PathPattern: /_next/static/*
+            TargetOriginId: ec2-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+          - PathPattern: /_next/image*
+            TargetOriginId: ec2-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: !Ref ImageCachePolicy
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+          - PathPattern: /assets/*
+            TargetOriginId: ec2-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+          - PathPattern: /models/*
+            TargetOriginId: ec2-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+      Tags: [{ Key: Project, Value: SomaCue }]
+
+  AliasA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  AliasAAAA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  # CloudFront metrics and their alarms live in us-east-1, so this Region needs its own topic.
+  EdgeAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: somacue-alerts-edge
+      DisplayName: SomaCue edge alerts
+      Tags: [{ Key: Project, Value: SomaCue }]
+
+  EdgeAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref EdgeAlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  EdgeAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref EdgeAlertTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudWatchAlarmsPublish
+            Effect: Allow
+            Principal: { Service: cloudwatch.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref EdgeAlertTopic
+            Condition: { StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" } }
+
+  Edge5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: somacue-cloudfront-5xx
+      AlarmDescription: More than 2 percent of CloudFront responses were 5xx for 15 minutes.
+      Namespace: AWS/CloudFront
+      MetricName: 5xxErrorRate
+      Dimensions:
+        - { Name: DistributionId, Value: !Ref Distribution }
+        - { Name: Region, Value: Global }
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref EdgeAlertTopic]
+
+Outputs:
+  DistributionId: { Value: !Ref Distribution }
+  DistributionDomain: { Value: !GetAtt Distribution.DomainName }

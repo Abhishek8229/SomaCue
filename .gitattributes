@@ -1,0 +1,4 @@
+
+# Scripts and unit files run on Linux: keep LF line endings
+*.sh text eol=lf
+infra/aws/instance/* text eol=lf

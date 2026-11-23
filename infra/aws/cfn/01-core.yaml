@@ -1,0 +1,373 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SomaCue core - VPC, security group, S3 buckets, IAM roles, SNS alerts, Route 53 zone, CodeBuild (ap-southeast-2)
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: somacue.abhishekt.dev
+  AlertEmail:
+    Type: String
+    Description: Address that receives alarm and budget emails. Required, no default (this repository is public).
+    AllowedPattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+    ConstraintDescription: Enter a valid email address
+  CloudFrontPrefixListId:
+    Type: String
+    Description: Id of the managed prefix list com.amazonaws.global.cloudfront.origin-facing in this Region
+    AllowedPattern: ^pl-[0-9a-f]+$
+
+Resources:
+  # ---------------------------------------------------------------- network
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: somacue }, { Key: Project, Value: SomaCue }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: somacue }, { Key: Project, Value: SomaCue }]
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags: [{ Key: Name, Value: somacue-public }, { Key: Project, Value: SomaCue }]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: somacue-public }, { Key: Project, Value: SomaCue }]
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # S3 over the AWS network instead of the internet (free)
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PublicRouteTable]
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SomaCue web host. HTTPS from CloudFront only. No SSH, no HTTP.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourcePrefixListId: !Ref CloudFrontPrefixListId
+          Description: CloudFront origin-facing
+      Tags: [{ Key: Name, Value: somacue-web }, { Key: Project, Value: SomaCue }]
+
+  # ---------------------------------------------------------------- storage
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub somacue-uploads-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }, BucketKeyEnabled: true }]
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 30 }
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+            ExpiredObjectDeleteMarker: true
+      Tags: [{ Key: Project, Value: SomaCue }]
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub somacue-artifacts-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }, BucketKeyEnabled: true }]
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-source, Status: Enabled, Prefix: source/, ExpirationInDays: 14 }
+          - { Id: expire-releases, Status: Enabled, Prefix: releases/, ExpirationInDays: 60 }
+          - { Id: abort-uploads, Status: Enabled, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 } }
+      Tags: [{ Key: Project, Value: SomaCue }]
+
+  BackupsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub somacue-backups-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }, BucketKeyEnabled: true }]
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-dumps-30-days, Status: Enabled, Prefix: db/, ExpirationInDays: 30 }
+          - { Id: abort-uploads, Status: Enabled, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 } }
+      Tags: [{ Key: Project, Value: SomaCue }]
+
+  UploadsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref UploadsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt UploadsBucket.Arn, !Sub "${UploadsBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt ArtifactsBucket.Arn, !Sub "${ArtifactsBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  BackupsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt BackupsBucket.Arn, !Sub "${BackupsBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  # ---------------------------------------------------------------- DNS
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig: { Comment: SomaCue (delegated from name.com) }
+      HostedZoneTags: [{ Key: Project, Value: SomaCue }]
+
+  # ---------------------------------------------------------------- alerts
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: somacue-alerts
+      DisplayName: SomaCue alerts
+      Tags: [{ Key: Project, Value: SomaCue }]
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudWatchAlarmsPublish
+            Effect: Allow
+            Principal: { Service: cloudwatch.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition: { StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" } }
+
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /somacue/app
+      RetentionInDays: 14
+
+  # ---------------------------------------------------------------- IAM
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: somacue-instance
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: somacue-instance
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: UploadsReadWrite
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${UploadsBucket.Arn}/uploads/*"
+              - Sid: ReleaseAndScriptsRead
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: [!Sub "${ArtifactsBucket.Arn}/releases/*", !Sub "${ArtifactsBucket.Arn}/scripts/*"]
+              - Sid: ScriptsList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ArtifactsBucket.Arn
+                Condition: { StringLike: { "s3:prefix": ["scripts/*"] } }
+              - Sid: BackupsWriteRead
+                Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub "${BackupsBucket.Arn}/db/*"
+              - Sid: BackupsList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt BackupsBucket.Arn
+                Condition: { StringLike: { "s3:prefix": ["db/*"] } }
+              - Sid: ReadOwnSecrets
+                Effect: Allow
+                Action: [ssm:GetParameter, ssm:GetParameters, ssm:GetParametersByPath]
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/somacue/prod*"
+              - Sid: DecryptSecretsViaSsmOnly
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition: { StringEquals: { "kms:ViaService": !Sub "ssm.${AWS::Region}.amazonaws.com" } }
+              - Sid: CertbotDnsChallenge
+                Effect: Allow
+                Action: route53:ChangeResourceRecordSets
+                Resource: !Sub "arn:${AWS::Partition}:route53:::hostedzone/${HostedZone}"
+                Condition:
+                  ForAllValues:StringEquals:
+                    route53:ChangeResourceRecordSetsRecordTypes: [TXT]
+                    route53:ChangeResourceRecordSetsActions: [UPSERT, DELETE]
+                    route53:ChangeResourceRecordSetsNormalizedRecordNames:
+                      - !Sub "_acme-challenge.${DomainName}"
+                      - !Sub "_acme-challenge.origin.${DomainName}"
+                  "Null": { "route53:ChangeResourceRecordSetsNormalizedRecordNames": "false" }
+              - Sid: CertbotZoneLookup
+                Effect: Allow
+                Action: [route53:ListHostedZones, route53:ListHostedZonesByName, route53:GetChange]
+                Resource: "*"
+              - Sid: PublishOwnMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition: { StringEquals: { "cloudwatch:namespace": [CWAgent, SomaCue] } }
+              - Sid: WriteOwnLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams]
+                Resource: !Sub "${AppLogGroup.Arn}:*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: somacue-instance
+      Roles: [!Ref InstanceRole]
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: somacue-codebuild
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition: { StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" } }
+      Policies:
+        - PolicyName: somacue-codebuild
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSource
+                Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub "${ArtifactsBucket.Arn}/source/*"
+              - Sid: BucketLocation
+                Effect: Allow
+                Action: [s3:GetBucketLocation, s3:GetBucketAcl]
+                Resource: !GetAtt ArtifactsBucket.Arn
+              - Sid: WriteRelease
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${ArtifactsBucket.Arn}/releases/*"
+              - Sid: BuildLogs
+                Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/somacue-release*"
+
+  ReleaseBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: somacue-release
+      Description: Builds the SomaCue release tarball on Arm
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Source:
+        Type: S3
+        Location: !Sub "${ArtifactsBucket}/source/source.zip"
+      Artifacts: { Type: NO_ARTIFACTS }
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux-aarch64-standard:3.0
+        ImagePullCredentialsType: CODEBUILD
+        EnvironmentVariables:
+          - { Name: ARTIFACTS_BUCKET, Type: PLAINTEXT, Value: !Ref ArtifactsBucket }
+      TimeoutInMinutes: 30
+      LogsConfig:
+        CloudWatchLogs: { Status: ENABLED }
+      Tags: [{ Key: Project, Value: SomaCue }]
+
+Outputs:
+  VpcId: { Value: !Ref Vpc, Export: { Name: somacue-VpcId } }
+  PublicSubnetId: { Value: !Ref PublicSubnet, Export: { Name: somacue-PublicSubnetId } }
+  WebSecurityGroupId: { Value: !Ref WebSecurityGroup, Export: { Name: somacue-WebSecurityGroupId } }
+  InstanceProfileName: { Value: !Ref InstanceProfile, Export: { Name: somacue-InstanceProfileName } }
+  UploadsBucketName: { Value: !Ref UploadsBucket, Export: { Name: somacue-UploadsBucket } }
+  ArtifactsBucketName: { Value: !Ref ArtifactsBucket, Export: { Name: somacue-ArtifactsBucket } }
+  BackupsBucketName: { Value: !Ref BackupsBucket, Export: { Name: somacue-BackupsBucket } }
+  HostedZoneId: { Value: !Ref HostedZone, Export: { Name: somacue-HostedZoneId } }
+  AlertTopicArn: { Value: !Ref AlertTopic, Export: { Name: somacue-AlertTopicArn } }
+  NameServers: { Value: !Join [",", !GetAtt HostedZone.NameServers] }
