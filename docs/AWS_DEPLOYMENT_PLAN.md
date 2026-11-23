@@ -2,7 +2,7 @@
 
 Version 2, approved. Supersedes the first draft (RDS, 22 migrated files, optional ALB fallback).
 Target: `https://somacue.abhishekt.dev`. Region `ap-southeast-2` (Sydney). Account: the owner's AWS account (Free Plan). Account, resource and distribution ids are deliberately not recorded in this public repository: the scripts look them up (`aws sts get-caller-identity`, resources tagged `Name=somacue`).
-Guidance level: medium. Branch: `aws-migration`.
+Guidance level: medium. Built on branch `aws-migration`, now merged into `main`. Companion write-up: [`AWS_DEPLOYMENT_JOURNEY.md`](AWS_DEPLOYMENT_JOURNEY.md).
 
 Execution status is tracked in section 12. Facts below come from the read-only audit done on 2026-11-23
 (repo, live AWS account, DNS, Neon, AWS Price List API). Items marked **(est.)** are estimates.
@@ -71,13 +71,17 @@ Trade-offs of this layout, accepted by the owner:
 - One host holds the app and the database. A lost disk is recovered from the nightly dump (RPO up to 24 h) or the
   daily EBS snapshot. There is no point-in-time recovery and no standby.
 - 2 GiB of RAM is shared by Node (limit 1200 MB), PostgreSQL (about 350 MB), nginx and agents. A 2 GiB swap file
-  covers peaks. The memory alarm is the trigger to move to `t4g.medium` (+USD 15.50).
+  covers peaks. The memory alarm is the trigger to move to `t4g.medium` (+USD 15.48).
 
 ## 4. Security and IAM
 
 - VPC: one public subnet, no NAT, an S3 gateway endpoint. Security group inbound: TCP 443 from
   `com.amazonaws.global.cloudfront.origin-facing`. No port 22, no port 80. Access is Session Manager only.
 - Instance: IMDSv2 required, encrypted EBS, termination protection, non-root `somacue` user, hardened systemd unit.
+  `sshd` still listens on the host, but the security group admits nothing on port 22.
+- OS patching: security updates are applied **once, at bootstrap** (`dnf -y upgrade --security`). No automatic update
+  job is installed (`dnf-automatic` is not set up), so **every later patch is a manual step run through SSM Run
+  Command** (see section 8). It is a known gap, tracked in section 9.
 - PostgreSQL: listens on localhost only; `somacue_owner` (migrations, DDL) and `somacue_app` (DML only) roles;
   `postgres` superuser reachable only through the local socket.
 - Instance role `somacue-instance`: SSM core, S3 read/write on `uploads/*` of the uploads bucket, put on the backups
@@ -87,13 +91,13 @@ Trade-offs of this layout, accepted by the owner:
 - S3: Block Public Access, TLS-only bucket policies, SSE-S3, versioning on uploads, lifecycle rules.
 - Secrets never touch git or disk. `X-Origin-Verify`, `SESSION_SECRET` and database passwords are generated fresh.
 
-## 5. Code changes (branch `aws-migration`)
+## 5. Code changes (merged to `main`)
 
 | Area | Change |
 |---|---|
 | Storage | `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` replace `@azure/storage-blob`. `lib/storage/s3.ts` is the only S3 module. References are stored as `s3://bucket/uploads/<uuid>.<ext>`. Production without `UPLOADS_BUCKET` is an error. |
 | URL allow-list | `isTrustedUploadUrl` accepts only the configured bucket and the strict `uploads/<uuid>.<ext>` shape (and `/uploads/…` in development). |
-| Downloads | `GET /api/files/[reportId]/[index]`: owner only (401, 403, 404), redirects to a 5-minute pre-signed URL. The dashboard links to it. |
+| Downloads | `GET /api/files/[reportId]/[index]`: signed-in owners only. 401 when signed out, 404 for anything that is not the caller's own file (so the route never confirms that someone else's report exists), 500 if signing fails. Success is a 302 to a 5-minute pre-signed URL with `Cache-Control: no-store`. The dashboard links to it. |
 | AI generation | `actions/aiJobs.ts`: `startIntakeJob`, `startQuizJob`, `startPainRescheduleJob`, `startFeedbackJob`, `getAiJob`. The work runs inside `after()` (cookies stay available), results are kept in an in-memory store, the client polls every 2 s. Existing actions keep their logic and return shapes. |
 | Runtime | `output: "standalone"`, `/api/health` (checks the database), `sharp` declared, `buildspec.yml`. |
 | Config | `.env.example` and README: Azure and Neon removed, `UPLOADS_BUCKET` and `AWS_REGION` added. |
@@ -132,20 +136,35 @@ backup cannot be decrypted.
 - Deploy: `infra/aws/deploy.ps1` starts CodeBuild from an S3 source zip, waits for `releases/<id>/release.tgz`, then
   sends `deploy.sh` through SSM. `deploy.sh` extracts to `/opt/somacue/releases/<id>`, runs `prisma migrate deploy`,
   switches the `current` symlink, restarts, checks `/api/health` and **rolls back** on failure.
-- Backups: 02:30 UTC cron `pg_dump | gzip | openssl aes-256-cbc -pbkdf2` to the backups bucket (30-day lifecycle) plus
-  daily EBS snapshots (7 kept). A hook file `/etc/somacue/ping-url` is pinged after each successful dump (placeholder).
-- Alarms: EC2 status check failed (auto-recover), `CPUCreditBalance` low, memory, swap and disk from the CloudWatch
-  agent, CloudFront 5xx rate, `/api/health` (a minute cron publishes a metric), budget and anomaly emails.
-- Restore: `restore-db.sh <s3 key>` decrypts and loads a dump into a fresh database.
+- Backups: 02:30 UTC cron `pg_dump --format=custom --compress=6 | openssl enc -aes-256-cbc -pbkdf2 -iter 200000`,
+  streamed to the backups bucket with SSE (30-day lifecycle), plus daily EBS snapshots (7 kept). A dump under 512 bytes
+  counts as a failure, success publishes `SomaCue/BackupSuccess`, and a hook file `/etc/somacue/ping-url` is pinged
+  after each successful dump (placeholder).
+- Alarms (9, all to one SNS topic): system status check (also triggers EC2 auto-recover), instance status check,
+  `CPUCreditBalance` under 20, memory over 85 %, swap over 50 % and disk over 80 % (CloudWatch agent), local
+  `/api/health` failing for 5 minutes, public address failing for 5 minutes (a one-minute probe on the host publishes
+  `SomaCue/Healthy` and `SomaCue/PublicHealthy`), and no successful backup in 24 hours. There is **no** alarm on
+  CloudFront's own 5xx rate (section 13). Budget and anomaly emails complete the set.
+- Restore: `restore-db.sh <s3 key> --yes` stops the app, decrypts the dump and restores it **into the live
+  database** (it refuses to run without `--yes`), then starts the app. To rehearse safely, restore into a scratch
+  database by hand first. The decrypt-and-list path has been checked; a full restore drill has not been run.
+- Patching (manual): after bootstrap nothing updates the OS by itself. Run security updates through SSM Run Command, for
+  example `. .\infra\aws\host.ps1; Invoke-Host 'dnf -y upgrade --security'` from the repository root, or send the same
+  command with `aws ssm send-command --document-name AWS-RunShellScript`. When a kernel update lands (compare
+  `uname -r` with the newest installed `kernel` package), reboot in a quiet window and then confirm `/api/health`
+  and that all alarms are green. A monthly cadence is the recommendation; adding `dnf-automatic` is the fix if manual
+  patching proves unreliable. This is a documented step only: no change to the running host was made for it.
 
 ## 9. Risks
 
 | Risk | Mitigation |
 |---|---|
 | Memory pressure on 2 GiB | systemd `MemoryMax=1200M`, swap, memory alarm, one-line resize |
-| One host, no standby | backups, snapshots, auto-recover alarm, documented rebuild (about 45 minutes) |
-| Background jobs live in process memory | a restart loses running jobs; the client shows a retry message after 5 minutes. Acceptable for one instance |
+| One host, no standby | backups, snapshots, auto-recover alarm, documented rebuild (estimated at about 45 minutes, not drilled) |
+| Background jobs live in process memory | a restart loses running jobs; the next poll reports the job unknown and the screen offers a retry (a job running over 6 minutes is failed). Acceptable for one instance |
 | In-memory rate limits reset on restart | accepted |
+| OS patches are applied once at bootstrap, then by hand | run `dnf -y upgrade --security` through SSM Run Command on a regular cadence (section 8); install `dnf-automatic` if it is missed |
+| No full restore drill yet | decrypt-and-list is verified; restore into a scratch database before relying on the backups |
 | Free Plan ends 2027-05-21 or when credits run out | upgrade to the Paid Plan before then |
 | Gemini key quota (external) | unchanged from today |
 
@@ -161,7 +180,7 @@ Data migration from Neon and Azure, RDS, ALB, WAF, multi-AZ, Bedrock, registrar 
 ## 12. Execution status
 
 Done (2026-11-23):
-- [x] Plan approved, branch `aws-migration`, code and tests (65 test files green)
+- [x] Plan approved, built on `aws-migration` and merged to `main`; code and tests (65 test files, 921 tests green)
 - [x] CloudFront origin-timeout quota increase to 180 s requested (`L-AECE9FA7`, pending; the current 120 s is enough)
 - [x] `somacue-core` (VPC, security group, S3 buckets, IAM, SNS, Route 53 zone, CodeBuild), `somacue-compute` (instance, Elastic IP, origin DNS name, 9 alarms, daily EBS snapshots)
 - [x] NS delegation at name.com verified on 1.1.1.1 and 8.8.8.8; apex records unchanged
@@ -170,7 +189,7 @@ Done (2026-11-23):
 - [x] Secrets in SSM under `/somacue/prod/`, loaded into tmpfs at start
 - [x] First release built on CodeBuild (ARM), deployed with health check, `/api/health` green
 - [x] CloudFront distribution (created through the CloudFront API; find it with `aws cloudfront list-distributions` and the alias `somacue.abhishekt.dev`), alias A/AAAA records, `https://somacue.abhishekt.dev` live
-- [x] Budget `somacue-monthly-35` (50 %, 80 %, 100 % forecast), Cost Anomaly Detection, alarms, nightly backup tested and restore-checked
+- [x] Budget `somacue-monthly-35` (50 %, 80 %, 100 % forecast), Cost Anomaly Detection, alarms, nightly encrypted backup tested (decrypts and lists; a full restore drill is still open)
 - [x] Live smoke test (throwaway user, deleted): auth, promo (wrong 400, right 200, repeat 409), S3 upload, owner-only 5-minute download links
 
 Waiting on the owner:
