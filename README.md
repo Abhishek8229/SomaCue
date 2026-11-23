@@ -198,12 +198,31 @@ A production start refuses to run without a `SESSION_SECRET` of at least 32 char
 
 ### Deploying to AWS
 
-SomaCue runs on one Arm EC2 instance behind CloudFront in `ap-southeast-2`, with PostgreSQL 18 on the same host and
-uploads in a private S3 bucket (about USD 23 a month). The architecture, the trade-offs behind it, the problems hit
-while building it and the scaling path are written up in
-[`docs/AWS_DEPLOYMENT_JOURNEY.md`](docs/AWS_DEPLOYMENT_JOURNEY.md). The decisions and the day-to-day runbook are in
-[`docs/AWS_DEPLOYMENT_PLAN.md`](docs/AWS_DEPLOYMENT_PLAN.md), and the infrastructure code is under `infra/aws/`.
+**Live at [somacue.abhishekt.dev](https://somacue.abhishekt.dev).** One Arm64 Graviton `t4g.small` in `ap-southeast-2` runs the
+app and a local PostgreSQL 18.7 for about **USD 22.90 a month**: 48% less than the same design on RDS and 68% less than RDS plus
+a load balancer (priced from the AWS Price List API, not deployed).
 
+Request path (Route 53 only answers the DNS lookup):
+
+```text
+User -> Route 53 (DNS) -> CloudFront (ACM TLS) -> X-Origin-Verify header
+     -> nginx :443 (certbot TLS) -> Next.js standalone :3100 -+-> PostgreSQL 18.7 :5432 (loopback)
+                                                              +-> private S3 (signed URLs) + SSM Parameter Store
+```
+
+- **Zero-trust edge.** No SSH or HTTP port is open. TCP 443 accepts only CloudFront's managed prefix list, and nginx returns
+  403 without the secret `X-Origin-Verify` header.
+- **Zero-disk secrets, least privilege.** SSM `SecureString` values are loaded into a root-only tmpfs (`/run/somacue/env`,
+  mode 0600) at service start. The app uses a DML-only PostgreSQL role, and uploads are served through 5-minute pre-signed URLs.
+- **Async AI workflows.** Long AI server actions run in the background with `after()` while the browser polls every 2 s, so no
+  request nears CloudFront's timeout and no ALB is needed.
+- **No-SSH Arm CI/CD.** Arm64 CodeBuild (98 s), an S3 artifact, then SSM Run Command with an atomic symlink switch, an
+  `/api/health` gate and automatic rollback.
+- **Observability and backups.** 9 CloudWatch alarms (including an end-to-end public health probe), a nightly AES-256
+  `pg_dump` to S3, daily EBS snapshots, and a USD 35 monthly budget with anomaly detection.
+
+**Read more:** the [engineering case study](docs/AWS_DEPLOYMENT_JOURNEY.md) (trade-off matrices, challenges and interview Q&A)
+and the [architecture and operations runbook](docs/AWS_DEPLOYMENT_PLAN.md). Infrastructure code is in `infra/aws/`.
 ### Billing (optional)
 
 1. Put your Razorpay **test** keys in `apps/web/.env`.
