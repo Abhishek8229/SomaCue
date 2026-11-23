@@ -196,6 +196,14 @@ pnpm start                       # http://localhost:3100
 
 A production start refuses to run without a `SESSION_SECRET` of at least 32 characters.
 
+### Deploying to AWS
+
+SomaCue runs on one Arm EC2 instance behind CloudFront in `ap-southeast-2`, with PostgreSQL 18 on the same host and
+uploads in a private S3 bucket (about USD 23 a month). The architecture, the trade-offs behind it, the problems hit
+while building it and the scaling path are written up in
+[`docs/AWS_DEPLOYMENT_JOURNEY.md`](docs/AWS_DEPLOYMENT_JOURNEY.md). The decisions and the day-to-day runbook are in
+[`docs/AWS_DEPLOYMENT_PLAN.md`](docs/AWS_DEPLOYMENT_PLAN.md), and the infrastructure code is under `infra/aws/`.
+
 ### Billing (optional)
 
 1. Put your Razorpay **test** keys in `apps/web/.env`.
