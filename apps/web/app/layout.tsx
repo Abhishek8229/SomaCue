@@ -46,6 +46,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <Navbar user={user} />
         {children}
+        {/* 100% privacy-first analytics */}
+        <script async data-hostname="somacue.abhishekt.dev" src="https://scripts.simpleanalyticscdn.com/latest.js" />
       </body>
     </html>
   );
